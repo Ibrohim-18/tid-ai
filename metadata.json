@@ -1,0 +1,5 @@
+{
+  "name": "Ayah Verse Editor",
+  "description": "An application to create beautiful images with verses from the Quran. Users can customize text, fonts, colors, and backgrounds, and then export their creations as PNG or JPEG images.",
+  "requestFramePermissions": []
+}
