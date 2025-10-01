@@ -1,0 +1,18 @@
+# Команды для загрузки в GitHub
+# ВАЖНО: Замените YOUR_USERNAME и YOUR_REPOSITORY_NAME на ваши данные!
+
+# 1. Добавить удаленный репозиторий
+git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPOSITORY_NAME.git
+
+# 2. Переименовать ветку в main
+git branch -M main
+
+# 3. Загрузить код на GitHub
+git push -u origin main
+
+# Пример с реальными данными:
+# git remote add origin https://github.com/john_doe/ayah-verse-editor.git
+# git branch -M main
+# git push -u origin main
+
+# После выполнения этих команд ваш код будет загружен на GitHub!
