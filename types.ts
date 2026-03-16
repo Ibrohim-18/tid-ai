@@ -36,4 +36,5 @@ export interface CustomFont {
   name: string;
   url: string;
   familyName: string;
+  format?: string;
 }

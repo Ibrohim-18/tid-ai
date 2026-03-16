@@ -272,6 +272,31 @@ const applyFastKashida = (text: string): string => {
     .join('');
 };
 
+const getFontExtension = (fileName: string): string => {
+  const match = fileName.toLowerCase().match(/\.([a-z0-9]+)$/);
+  return match?.[1] ?? '';
+};
+
+const getFontFormat = (fileName: string, fileUrl?: string, explicitFormat?: string): string | null => {
+  if (explicitFormat) return explicitFormat;
+
+  const extension = getFontExtension(fileName);
+  if (extension === 'woff2') return 'woff2';
+  if (extension === 'woff') return 'woff';
+  if (extension === 'ttf') return 'truetype';
+  if (extension === 'otf') return 'opentype';
+
+  const mimeMatch = fileUrl?.match(/^data:([^;,]+)/i)?.[1]?.toLowerCase();
+  if (!mimeMatch) return null;
+
+  if (mimeMatch.includes('woff2')) return 'woff2';
+  if (mimeMatch.includes('woff')) return 'woff';
+  if (mimeMatch.includes('ttf') || mimeMatch.includes('truetype')) return 'truetype';
+  if (mimeMatch.includes('otf') || mimeMatch.includes('opentype')) return 'opentype';
+
+  return null;
+};
+
 const App: React.FC = () => {
   const [historyState, dispatchHistory] = useReducer(historyReducer, undefined, (): HistoryState => {
     const defaultState = getInitialDefaultState();
@@ -308,6 +333,7 @@ const App: React.FC = () => {
   const [activeElementId, setActiveElementId] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
+  const loadedFontFacesRef = useRef<Map<string, FontFace>>(new Map());
   const canUndo = historyState.past.length > 0;
   const canRedo = historyState.future.length > 0;
 
@@ -332,18 +358,63 @@ const App: React.FC = () => {
       document.head.appendChild(styleTag);
     }
 
+    const activeFamilyNames = new Set(appState.customFonts.map((font) => font.familyName));
+    loadedFontFacesRef.current.forEach((fontFace, familyName) => {
+      if (!activeFamilyNames.has(familyName)) {
+        document.fonts.delete(fontFace);
+        loadedFontFacesRef.current.delete(familyName);
+      }
+    });
+
     const fontFaces = appState.customFonts
       .map(
-        (font) => `
+        (font) => {
+          const format = getFontFormat(font.name, font.url, font.format);
+          const src = format
+            ? `url(${JSON.stringify(font.url)}) format('${format}')`
+            : `url(${JSON.stringify(font.url)})`;
+
+          return `
         @font-face {
             font-family: '${font.familyName}';
-            src: url('${font.url}');
+            src: ${src};
+            font-style: normal;
+            font-weight: 400;
+            font-display: swap;
         }
-    `
+    `;
+        }
       )
       .join('\n');
 
     styleTag.textContent = fontFaces;
+
+    if (typeof FontFace !== 'undefined') {
+      appState.customFonts.forEach((font) => {
+        if (loadedFontFacesRef.current.has(font.familyName)) return;
+
+        const format = getFontFormat(font.name, font.url, font.format);
+        const source = format
+          ? `url(${JSON.stringify(font.url)}) format('${format}')`
+          : `url(${JSON.stringify(font.url)})`;
+
+        const fontFace = new FontFace(font.familyName, source, {
+          style: 'normal',
+          weight: '400',
+          display: 'swap',
+        });
+
+        fontFace
+          .load()
+          .then((loadedFace) => {
+            document.fonts.add(loadedFace);
+            loadedFontFacesRef.current.set(font.familyName, loadedFace);
+          })
+          .catch((error) => {
+            console.warn(`Failed to load custom font "${font.name}"`, error);
+          });
+      });
+    }
   }, [appState.customFonts]);
 
   const setAyah = useCallback<TextElementSetter>((updater, options) => {
@@ -392,6 +463,7 @@ const App: React.FC = () => {
         name: file.name,
         url: fontUrl,
         familyName: `custom_${file.name.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`,
+        format: getFontFormat(file.name, typeof fontUrl === 'string' ? fontUrl : undefined) ?? undefined,
       };
 
       updateAppState((s) => ({
@@ -587,6 +659,34 @@ const App: React.FC = () => {
     dispatchHistory({ type: 'REDO' });
   }, []);
 
+  const triggerCanvasDownload = useCallback((canvas: HTMLCanvasElement, format: 'png' | 'jpeg', fileName: string, quality?: number) => {
+    const link = document.createElement('a');
+    link.download = fileName;
+
+    const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+    const fallbackHref = () => canvas.toDataURL(mimeType, quality);
+
+    if (canvas.toBlob) {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          link.href = fallbackHref();
+          link.click();
+          return;
+        }
+
+        const objectUrl = URL.createObjectURL(blob);
+        link.href = objectUrl;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+      }, mimeType, quality);
+
+      return;
+    }
+
+    link.href = fallbackHref();
+    link.click();
+  }, []);
+
   const handleDownloadImage = useCallback((format: 'png' | 'jpeg') => {
     const canvasElement = canvasRef.current;
     if (!canvasElement) return;
@@ -600,20 +700,27 @@ const App: React.FC = () => {
     }
 
     const { width, height } = canvasElement.getBoundingClientRect();
+    const isCoarsePointerDevice = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+    const longestEdge = Math.max(width, height, 1);
+    const exportScale = isCoarsePointerDevice
+      ? Math.max(2.25, Math.min(3.25, 2600 / longestEdge))
+      : 5;
+
     setTimeout(() => {
       // @ts-ignore
       html2canvas(canvasElement, {
         backgroundColor: appState.backgroundMode === BackgroundMode.TRANSPARENT ? null : appState.backgroundMode === BackgroundMode.GRADIENT ? '#667eea' : appState.bgColor,
-        scale: 5,
+        scale: exportScale,
         useCORS: true,
         width,
         height,
+        windowWidth: Math.ceil(width),
+        windowHeight: Math.ceil(height),
+        logging: false,
       })
         .then((canvas) => {
           canvasElement.classList.remove('exporting');
           canvasElement.classList.remove('exporting-transparent');
-          const link = document.createElement('a');
-          link.download = `ayah.${format}`;
 
           if (format === 'jpeg') {
             const jpegCanvas = document.createElement('canvas');
@@ -624,13 +731,11 @@ const App: React.FC = () => {
               ctx.fillStyle = appState.backgroundMode === BackgroundMode.GRADIENT ? '#667eea' : appState.bgColor;
               ctx.fillRect(0, 0, jpegCanvas.width, jpegCanvas.height);
               ctx.drawImage(canvas, 0, 0);
-              link.href = jpegCanvas.toDataURL('image/jpeg', 0.95);
+              triggerCanvasDownload(jpegCanvas, 'jpeg', 'ayah.jpeg', 0.95);
             }
           } else {
-            link.href = canvas.toDataURL('image/png');
+            triggerCanvasDownload(canvas, 'png', 'ayah.png');
           }
-
-          link.click();
         })
         .catch((err) => {
           console.error('Failed to export image:', err);
@@ -638,7 +743,7 @@ const App: React.FC = () => {
           canvasElement.classList.remove('exporting-transparent');
         });
     }, 100);
-  }, [appState.backgroundMode, appState.bgColor]);
+  }, [appState.backgroundMode, appState.bgColor, triggerCanvasDownload]);
 
   const customFontOptions = useMemo(() => appState.customFonts.map((f) => ({ value: f.familyName, label: f.name })), [appState.customFonts]);
   const combinedArabicFonts = useMemo(() => [...ARABIC_FONTS, { value: 'separator', label: '--- Custom Fonts ---', disabled: true }, ...customFontOptions], [customFontOptions]);
@@ -718,14 +823,27 @@ const App: React.FC = () => {
         }
         #canvas.exporting.exporting-transparent .canvas-text-ayah {
           color: rgba(255,255,255,0.98) !important;
-          text-shadow: 0 1px 10px rgba(255,255,255,0.06);
+          text-shadow:
+            0 1px 1px rgba(0,0,0,0.88),
+            0 0 2px rgba(0,0,0,0.72),
+            0 2px 12px rgba(0,0,0,0.28),
+            0 1px 10px rgba(255,255,255,0.06);
         }
         #canvas.exporting.exporting-transparent .canvas-text-translation {
-          color: rgba(255,255,255,0.9) !important;
-          text-shadow: 0 1px 10px rgba(255,255,255,0.08);
+          color: rgba(255,255,255,0.92) !important;
+          text-shadow:
+            0 1px 1px rgba(0,0,0,0.84),
+            0 0 2px rgba(0,0,0,0.68),
+            0 2px 10px rgba(0,0,0,0.24),
+            0 1px 10px rgba(255,255,255,0.08);
         }
         #canvas.exporting.exporting-transparent .canvas-text-translation .highlight {
           color: rgba(255,255,255,0.96) !important;
+          text-shadow:
+            0 1px 1px rgba(0,0,0,0.9),
+            0 0 2px rgba(0,0,0,0.76),
+            0 2px 12px rgba(0,0,0,0.3),
+            0 1px 10px rgba(255,255,255,0.08);
         }
         #canvas.exporting .draggable-text-wrapper { transform: none !important; }
         #canvas.exporting .sticker-control, #canvas.exporting .sticker-border { display: none !important; }
