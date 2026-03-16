@@ -67,6 +67,7 @@ const App: React.FC = () => {
 
   const [isHighlighting, setIsHighlighting] = useState(false);
   const [isApplyingKashida, setIsApplyingKashida] = useState(false);
+  const [isKashidaTakingLong, setIsKashidaTakingLong] = useState(false);
   const [draggingElement, setDraggingElement] = useState<string | null>(null);
   const [activeElementId, setActiveElementId] = useState<string | null>(null);
 
@@ -208,11 +209,14 @@ const App: React.FC = () => {
     if (!appState.ayah.text) return;
 
     setIsApplyingKashida(true);
+    setIsKashidaTakingLong(false);
+    const slowTimer = window.setTimeout(() => setIsKashidaTakingLong(true), 3500);
+
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `Add Arabic kashida (tatweel, character: 'ـ') to the following Arabic text for a beautiful calligraphic effect. Only add kashidas where appropriate for elongation. Do not change or remove any original characters. The output should be only the modified text, with no extra explanations. Text: "${appState.ayah.text}"`,
+        contents: `Add Arabic kashida (tatweel, character: 'ـ') only where it is calligraphically appropriate. Keep every original Arabic letter and harakah unchanged. Return only the updated Arabic text with no explanation. Text: "${appState.ayah.text}"`,
       });
       const newText = response.text.trim();
       if (newText) {
@@ -221,6 +225,8 @@ const App: React.FC = () => {
     } catch (error) {
       console.error('Error applying kashida:', error);
     } finally {
+      window.clearTimeout(slowTimer);
+      setIsKashidaTakingLong(false);
       setIsApplyingKashida(false);
     }
   }, [appState.ayah.text, setAyah]);
@@ -415,6 +421,7 @@ const App: React.FC = () => {
         isHighlighting={isHighlighting}
         onApplyKashida={handleApplyKashida}
         isApplyingKashida={isApplyingKashida}
+        isApplyingKashidaSlow={isKashidaTakingLong}
         onAddSticker={handleAddSticker}
         onStickerUpload={handleStickerUpload}
         userStickers={appState.userStickers}
@@ -428,7 +435,7 @@ const App: React.FC = () => {
         #canvas.exporting { border: none !important; }
         #canvas.exporting .draggable-text-wrapper { transform: none !important; }
         #canvas.exporting .sticker-control, #canvas.exporting .sticker-border { display: none !important; }
-        .highlight { color: #ffd700; }
+        .highlight { color: #ffffff; font-weight: 600; text-shadow: 0 1px 10px rgba(255,255,255,0.12); }
       `}</style>
     </div>
   );
