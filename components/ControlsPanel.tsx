@@ -48,7 +48,7 @@ const cardClass = 'rounded-[26px] border border-white/10 bg-white/5 p-3 shadow-[
 const uploadClass = 'block w-full cursor-pointer rounded-[22px] border border-dashed border-white/15 bg-white/5 px-4 py-3 text-center text-sm font-medium text-white/75 transition hover:border-white/25 hover:bg-white/10 hover:text-white';
 
 const Popover: React.FC<{ title: string; children: React.ReactNode; onClose: () => void; className?: string }> = ({ title, children, onClose, className = '' }) => (
-  <div className={`absolute top-full left-1/2 z-20 mt-3 w-[calc(100vw-24px)] max-w-[390px] -translate-x-1/2 rounded-[24px] border border-white/12 bg-[#09090be8] p-5 text-white backdrop-blur-2xl shadow-[0_24px_80px_rgba(0,0,0,0.32)] sm:max-w-[430px] ${className}`} onClick={(e) => e.stopPropagation()}>
+  <div className={`absolute top-full left-1/2 z-40 mt-3 w-[calc(100vw-24px)] max-w-[390px] -translate-x-1/2 rounded-[24px] border border-white/12 bg-[#09090be8] p-5 text-white backdrop-blur-2xl shadow-[0_24px_80px_rgba(0,0,0,0.32)] sm:max-w-[430px] ${className}`} onClick={(e) => e.stopPropagation()}>
     <div className="flex justify-between items-center mb-4">
       <h3 className="text-lg font-semibold tracking-tight text-white">{title}</h3>
       <button onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white/70 shadow-sm transition hover:bg-white hover:text-slate-900" aria-label="Close panel">
@@ -60,7 +60,7 @@ const Popover: React.FC<{ title: string; children: React.ReactNode; onClose: () 
 );
 
 const TextWorkspacePanel: React.FC<{ children: React.ReactNode; onClose: () => void }> = ({ children, onClose }) => (
-  <div className="fixed inset-x-3 bottom-3 z-20 max-h-[72svh] overflow-hidden rounded-[30px] border border-white/12 bg-[#09090be8] text-white shadow-[0_30px_90px_rgba(0,0,0,0.35)] backdrop-blur-2xl md:inset-x-auto md:bottom-4 md:left-4 md:top-24 md:w-[430px] md:max-h-[calc(100svh-112px)]" onClick={(e) => e.stopPropagation()}>
+  <div className="fixed inset-x-3 bottom-3 z-50 max-h-[72svh] overflow-hidden rounded-[30px] border border-white/12 bg-[#09090be8] text-white shadow-[0_30px_90px_rgba(0,0,0,0.35)] backdrop-blur-2xl md:inset-x-auto md:bottom-4 md:left-4 md:top-24 md:w-[430px] md:max-h-[calc(100svh-112px)]" onClick={(e) => e.stopPropagation()}>
     <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
       <div>
         <h3 className="text-lg font-semibold tracking-tight text-white">Text & AI</h3>
@@ -153,7 +153,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
 
   return (
     <>
-      <header className="flex fixed top-4 left-1/2 -translate-x-1/2 z-10 w-full px-4 justify-center">
+      <header className="fixed inset-x-0 top-4 z-30 flex justify-center px-4">
         <div ref={controlsRef} className="relative">
           <div className="flex flex-wrap items-center justify-center gap-2 rounded-[28px] border border-white/12 bg-[#09090bd6] p-2.5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:gap-2.5">
             <ToolbarButton onClick={(e) => { e.stopPropagation(); toggleMenu('text'); }} isActive={activeMenu === 'text'} icon={Sparkles} rainbow>Text & AI</ToolbarButton>

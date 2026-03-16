@@ -328,8 +328,8 @@ const CanvasArea = forwardRef<HTMLDivElement, CanvasAreaProps>((props, ref) => {
   }
 
   const effectiveTextColor = backgroundMode === BackgroundMode.GRADIENT
-    ? 'rgba(255, 255, 255, 0.8)'
-    : withOpacity(textColor, 0.8);
+    ? '#ffffff'
+    : textColor;
 
   const ayahStyle: React.CSSProperties = {
     fontFamily: ayah.font,
