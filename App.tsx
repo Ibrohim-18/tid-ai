@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo, useReducer } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
 import type { TextElement, CustomFont, StickerElement } from './types';
 import { Language, BackgroundMode } from './types';
@@ -19,10 +19,131 @@ interface AppState {
   userStickers: string[];
 }
 
+interface HistoryState {
+  past: AppState[];
+  present: AppState;
+  future: AppState[];
+  pendingHistoryBase: AppState | null;
+}
+
+type HistoryAction =
+  | { type: 'APPLY'; updater: (state: AppState) => AppState; recordHistory?: boolean }
+  | { type: 'UNDO' }
+  | { type: 'REDO' };
+
+type UpdateOptions = {
+  recordHistory?: boolean;
+};
+
+type TextElementSetter = (updater: React.SetStateAction<TextElement>, options?: UpdateOptions) => void;
+
+const HISTORY_LIMIT = 40;
+
 const ARABIC_DIACRITICS_REGEX = /[\u064B-\u065F\u0670\u06D6-\u06ED]/;
 const ARABIC_BASE_LETTER_REGEX = /[\u0621-\u064A]/;
 const STRETCHABLE_ARABIC_LETTERS = new Set(['ب', 'ت', 'ث', 'ج', 'ح', 'خ', 'س', 'ش', 'ص', 'ض', 'ط', 'ظ', 'ع', 'غ', 'ف', 'ق', 'ك', 'ل', 'م', 'ن', 'ه', 'ي']);
 const NON_CONNECTING_ARABIC_LETTERS = new Set(['ا', 'أ', 'إ', 'آ', 'د', 'ذ', 'ر', 'ز', 'و', 'ؤ', 'ء']);
+
+const areStatesEqual = (a: AppState, b: AppState): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+const areTextElementsEqual = (a: TextElement, b: TextElement): boolean => (
+  a.text === b.text
+  && a.font === b.font
+  && a.size === b.size
+  && a.position.x === b.position.x
+  && a.position.y === b.position.y
+);
+
+const historyReducer = (state: HistoryState, action: HistoryAction): HistoryState => {
+  switch (action.type) {
+    case 'APPLY': {
+      const next = action.updater(state.present);
+
+      if (action.recordHistory === false) {
+        if (next === state.present) {
+          return state;
+        }
+
+        return {
+          ...state,
+          present: next,
+          pendingHistoryBase: state.pendingHistoryBase ?? state.present,
+        };
+      }
+
+      const baseState = state.pendingHistoryBase ?? state.present;
+
+      if (next === state.present) {
+        if (!state.pendingHistoryBase) {
+          return state;
+        }
+
+        if (areStatesEqual(baseState, state.present)) {
+          return {
+            ...state,
+            pendingHistoryBase: null,
+          };
+        }
+
+        return {
+          past: [...state.past.slice(-(HISTORY_LIMIT - 1)), baseState],
+          present: state.present,
+          future: [],
+          pendingHistoryBase: null,
+        };
+      }
+
+      if (areStatesEqual(baseState, next)) {
+        return {
+          ...state,
+          present: next,
+          pendingHistoryBase: null,
+        };
+      }
+
+      return {
+        past: [...state.past.slice(-(HISTORY_LIMIT - 1)), baseState],
+        present: next,
+        future: [],
+        pendingHistoryBase: null,
+      };
+    }
+    case 'UNDO': {
+      if (state.past.length === 0) {
+        return {
+          ...state,
+          pendingHistoryBase: null,
+        };
+      }
+
+      const previous = state.past[state.past.length - 1];
+      return {
+        past: state.past.slice(0, -1),
+        present: previous,
+        future: [state.present, ...state.future],
+        pendingHistoryBase: null,
+      };
+    }
+    case 'REDO': {
+      if (state.future.length === 0) {
+        return {
+          ...state,
+          pendingHistoryBase: null,
+        };
+      }
+
+      const [next, ...restFuture] = state.future;
+      return {
+        past: [...state.past.slice(-(HISTORY_LIMIT - 1)), state.present],
+        present: next,
+        future: restFuture,
+        pendingHistoryBase: null,
+      };
+    }
+    default:
+      return state;
+  }
+};
 
 const getInitialDefaultState = (): AppState => {
   const isMobile = window.innerWidth < 768;
@@ -152,7 +273,7 @@ const applyFastKashida = (text: string): string => {
 };
 
 const App: React.FC = () => {
-  const [appState, setAppState] = useState<AppState>(() => {
+  const [historyState, dispatchHistory] = useReducer(historyReducer, undefined, (): HistoryState => {
     const defaultState = getInitialDefaultState();
 
     try {
@@ -160,22 +281,39 @@ const App: React.FC = () => {
       if (savedState) {
         const parsed = JSON.parse(savedState);
         if (parsed.ayah && parsed.translation) {
-          return { ...defaultState, ...parsed };
+          return {
+            past: [],
+            present: { ...defaultState, ...parsed },
+            future: [],
+            pendingHistoryBase: null,
+          };
         }
       }
     } catch (error) {
       console.error('Failed to load state from localStorage', error);
     }
 
-    return defaultState;
+    return {
+      past: [],
+      present: defaultState,
+      future: [],
+      pendingHistoryBase: null,
+    };
   });
 
+  const appState = historyState.present;
   const [isHighlighting, setIsHighlighting] = useState(false);
   const [isApplyingKashida, setIsApplyingKashida] = useState(false);
   const [draggingElement, setDraggingElement] = useState<string | null>(null);
   const [activeElementId, setActiveElementId] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
+  const canUndo = historyState.past.length > 0;
+  const canRedo = historyState.future.length > 0;
+
+  const updateAppState = useCallback((updater: (state: AppState) => AppState, options?: UpdateOptions) => {
+    dispatchHistory({ type: 'APPLY', updater, recordHistory: options?.recordHistory });
+  }, []);
 
   useEffect(() => {
     try {
@@ -208,16 +346,22 @@ const App: React.FC = () => {
     styleTag.textContent = fontFaces;
   }, [appState.customFonts]);
 
-  const setAyah = useCallback((updater: React.SetStateAction<TextElement>) => {
-    setAppState((s) => ({ ...s, ayah: typeof updater === 'function' ? updater(s.ayah) : updater }));
-  }, []);
+  const setAyah = useCallback<TextElementSetter>((updater, options) => {
+    updateAppState((s) => {
+      const nextAyah = typeof updater === 'function' ? updater(s.ayah) : updater;
+      return areTextElementsEqual(s.ayah, nextAyah) ? s : { ...s, ayah: nextAyah };
+    }, options);
+  }, [updateAppState]);
 
-  const setTranslation = useCallback((updater: React.SetStateAction<TextElement>) => {
-    setAppState((s) => ({ ...s, translation: typeof updater === 'function' ? updater(s.translation) : updater }));
-  }, []);
+  const setTranslation = useCallback<TextElementSetter>((updater, options) => {
+    updateAppState((s) => {
+      const nextTranslation = typeof updater === 'function' ? updater(s.translation) : updater;
+      return areTextElementsEqual(s.translation, nextTranslation) ? s : { ...s, translation: nextTranslation };
+    }, options);
+  }, [updateAppState]);
 
   const handleLanguageChange = useCallback((lang: Language) => {
-    setAppState((s) => {
+    updateAppState((s) => {
       let newTranslationText = s.translation.text;
 
       if (lang === Language.EN && s.translation.text === 'Во имя Аллаха, Милостивого, Милосердного') {
@@ -233,12 +377,12 @@ const App: React.FC = () => {
         translation: { ...s.translation, text: newTranslationText },
       };
     });
-  }, []);
+  }, [updateAppState]);
 
-  const setTextColor = useCallback((color: string) => setAppState((s) => ({ ...s, textColor: color })), []);
-  const setBgColor = useCallback((color: string) => setAppState((s) => ({ ...s, bgColor: color })), []);
-  const setBackgroundMode = useCallback((mode: BackgroundMode) => setAppState((s) => ({ ...s, backgroundMode: mode })), []);
-  const setHighlightedWords = useCallback((words: string[]) => setAppState((s) => ({ ...s, highlightedWords: words })), []);
+  const setTextColor = useCallback((color: string) => updateAppState((s) => (s.textColor === color ? s : { ...s, textColor: color })), [updateAppState]);
+  const setBgColor = useCallback((color: string) => updateAppState((s) => (s.bgColor === color ? s : { ...s, bgColor: color })), [updateAppState]);
+  const setBackgroundMode = useCallback((mode: BackgroundMode) => updateAppState((s) => (s.backgroundMode === mode ? s : { ...s, backgroundMode: mode })), [updateAppState]);
+  const setHighlightedWords = useCallback((words: string[]) => updateAppState((s) => (JSON.stringify(s.highlightedWords) === JSON.stringify(words) ? s : { ...s, highlightedWords: words })), [updateAppState]);
 
   const handleFontUpload = useCallback((file: File) => {
     const reader = new FileReader();
@@ -250,16 +394,16 @@ const App: React.FC = () => {
         familyName: `custom_${file.name.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`,
       };
 
-      setAppState((s) => ({
+      updateAppState((s) => ({
         ...s,
         customFonts: [...s.customFonts, newFont],
       }));
     };
     reader.readAsDataURL(file);
-  }, []);
+  }, [updateAppState]);
 
   const handleRemoveCustomFont = useCallback((familyName: string) => {
-    setAppState((s) => {
+    updateAppState((s) => {
       const newAyah = { ...s.ayah };
       if (newAyah.font === familyName) newAyah.font = ARABIC_FONTS[0].value;
 
@@ -273,13 +417,13 @@ const App: React.FC = () => {
         translation: newTranslation,
       };
     });
-  }, []);
+  }, [updateAppState]);
 
   const handleHighlightWords = useCallback(async () => {
     if (!appState.translation.text) return;
 
     setIsHighlighting(true);
-    setAppState((s) => ({ ...s, highlightedWords: [] }));
+    updateAppState((s) => ({ ...s, highlightedWords: [] }), { recordHistory: false });
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -301,14 +445,14 @@ const App: React.FC = () => {
       const resultText = response.text.trim();
       const words = JSON.parse(resultText);
       if (Array.isArray(words)) {
-        setAppState((s) => ({ ...s, highlightedWords: words.map(String) }));
+        updateAppState((s) => ({ ...s, highlightedWords: words.map(String) }));
       }
     } catch (error) {
       console.error('Error highlighting words:', error);
     } finally {
       setIsHighlighting(false);
     }
-  }, [appState.translation.text]);
+  }, [appState.translation.text, updateAppState]);
 
   const handleApplyKashida = useCallback(() => {
     if (!appState.ayah.text) return;
@@ -339,14 +483,14 @@ const App: React.FC = () => {
         zIndex: Math.max(0, ...appState.stickers.map((s) => s.zIndex)) + 1,
       };
 
-      setAppState((s) => ({
+      updateAppState((s) => ({
         ...s,
         stickers: [...s.stickers, newSticker],
       }));
       setActiveElementId(newSticker.id);
     };
     img.src = src;
-  }, [appState.stickers]);
+  }, [appState.stickers, updateAppState]);
 
   const handleStickerUpload = useCallback((src: string) => {
     const img = new Image();
@@ -365,7 +509,7 @@ const App: React.FC = () => {
         zIndex: 0,
       };
 
-      setAppState((s) => {
+      updateAppState((s) => {
         const maxZIndex = Math.max(0, ...s.stickers.map((st) => st.zIndex)) + 1;
         const finalSticker = { ...newSticker, zIndex: maxZIndex };
         const newUserStickers = s.userStickers.includes(src) ? s.userStickers : [...s.userStickers, src];
@@ -379,22 +523,35 @@ const App: React.FC = () => {
       setActiveElementId(newStickerId);
     };
     img.src = src;
-  }, []);
+  }, [updateAppState]);
 
-  const handleUpdateSticker = useCallback((id: string, newProps: Partial<StickerElement>) => {
-    setAppState((s) => ({
-      ...s,
-      stickers: s.stickers.map((sticker) => (sticker.id === id ? { ...sticker, ...newProps } : sticker)),
-    }));
-  }, []);
+  const handleUpdateSticker = useCallback((id: string, newProps: Partial<StickerElement>, options?: UpdateOptions) => {
+    updateAppState((s) => {
+      const nextStickers = s.stickers.map((sticker) => {
+        if (sticker.id !== id) return sticker;
+
+        const updatedSticker: StickerElement = {
+          ...sticker,
+          ...newProps,
+          position: newProps.position ?? sticker.position,
+        };
+
+        return JSON.stringify(updatedSticker) === JSON.stringify(sticker) ? sticker : updatedSticker;
+      });
+
+      return nextStickers === s.stickers || nextStickers.every((sticker, index) => sticker === s.stickers[index])
+        ? s
+        : { ...s, stickers: nextStickers };
+    }, options);
+  }, [updateAppState]);
 
   const handleRemoveSticker = useCallback((id: string) => {
-    setAppState((s) => ({
+    updateAppState((s) => ({
       ...s,
       stickers: s.stickers.filter((sticker) => sticker.id !== id),
     }));
     setActiveElementId(null);
-  }, []);
+  }, [updateAppState]);
 
   const handleRemoveUserSticker = useCallback((stickerSrc: string) => {
     const activeStickerIsBeingDeleted = appState.stickers.some((sticker) => sticker.id === activeElementId && sticker.src === stickerSrc);
@@ -402,22 +559,32 @@ const App: React.FC = () => {
       setActiveElementId(null);
     }
 
-    setAppState((s) => ({
+    updateAppState((s) => ({
       ...s,
       userStickers: s.userStickers.filter((src) => src !== stickerSrc),
       stickers: s.stickers.filter((sticker) => sticker.src !== stickerSrc),
     }));
-  }, [appState.stickers, activeElementId]);
+  }, [appState.stickers, activeElementId, updateAppState]);
 
   const handleSelectSticker = useCallback((id: string) => {
     setActiveElementId(id);
-    setAppState((s) => {
+    updateAppState((s) => {
       const maxZIndex = Math.max(0, ...s.stickers.map((st) => st.zIndex));
       return {
         ...s,
         stickers: s.stickers.map((sticker) => (sticker.id === id ? { ...sticker, zIndex: maxZIndex + 1 } : sticker)),
       };
-    });
+    }, { recordHistory: false });
+  }, [updateAppState]);
+
+  const handleUndo = useCallback(() => {
+    setActiveElementId(null);
+    dispatchHistory({ type: 'UNDO' });
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    setActiveElementId(null);
+    dispatchHistory({ type: 'REDO' });
   }, []);
 
   const handleDownloadImage = useCallback((format: 'png' | 'jpeg') => {
@@ -426,6 +593,11 @@ const App: React.FC = () => {
 
     setActiveElementId(null);
     canvasElement.classList.add('exporting');
+
+    const isTransparentPreviewExport = appState.backgroundMode === BackgroundMode.TRANSPARENT;
+    if (isTransparentPreviewExport) {
+      canvasElement.classList.add('exporting-transparent');
+    }
 
     const { width, height } = canvasElement.getBoundingClientRect();
     setTimeout(() => {
@@ -439,6 +611,7 @@ const App: React.FC = () => {
       })
         .then((canvas) => {
           canvasElement.classList.remove('exporting');
+          canvasElement.classList.remove('exporting-transparent');
           const link = document.createElement('a');
           link.download = `ayah_${Date.now()}.${format}`;
 
@@ -462,13 +635,14 @@ const App: React.FC = () => {
         .catch((err) => {
           console.error('Failed to export image:', err);
           canvasElement.classList.remove('exporting');
+          canvasElement.classList.remove('exporting-transparent');
         });
     }, 100);
   }, [appState.backgroundMode, appState.bgColor]);
 
-  const customFontOptions = appState.customFonts.map((f) => ({ value: f.familyName, label: f.name }));
-  const combinedArabicFonts = [...ARABIC_FONTS, { value: 'separator', label: '--- Custom Fonts ---', disabled: true }, ...customFontOptions];
-  const combinedTranslationFonts = [...TRANSLATION_FONTS, { value: 'separator', label: '--- Custom Fonts ---', disabled: true }, ...customFontOptions];
+  const customFontOptions = useMemo(() => appState.customFonts.map((f) => ({ value: f.familyName, label: f.name })), [appState.customFonts]);
+  const combinedArabicFonts = useMemo(() => [...ARABIC_FONTS, { value: 'separator', label: '--- Custom Fonts ---', disabled: true }, ...customFontOptions], [customFontOptions]);
+  const combinedTranslationFonts = useMemo(() => [...TRANSLATION_FONTS, { value: 'separator', label: '--- Custom Fonts ---', disabled: true }, ...customFontOptions], [customFontOptions]);
 
   return (
     <div className="font-sans text-gray-800 w-screen h-[100svh] overflow-hidden bg-black">
@@ -520,6 +694,10 @@ const App: React.FC = () => {
         onStickerUpload={handleStickerUpload}
         userStickers={appState.userStickers}
         onRemoveUserSticker={handleRemoveUserSticker}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
       />
       <style>{`
         @font-face {
@@ -527,6 +705,10 @@ const App: React.FC = () => {
           src: url('https://fonts.qurancomplex.gov.sa/wp-content/uploads/2020/07/KFC-v2-Uthman-Taha-Naskh-Regular.otf') format('opentype');
         }
         #canvas.exporting { border: none !important; }
+        #canvas.exporting.exporting-transparent {
+          background-image: none !important;
+          box-shadow: none !important;
+        }
         #canvas.exporting .draggable-text-wrapper { transform: none !important; }
         #canvas.exporting .sticker-control, #canvas.exporting .sticker-border { display: none !important; }
         .highlight { color: rgba(255,255,255,0.84); font-weight: 600; text-shadow: 0 1px 8px rgba(255,255,255,0.08); }

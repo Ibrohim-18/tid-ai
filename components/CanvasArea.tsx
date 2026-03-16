@@ -2,6 +2,14 @@ import React, { useRef, useEffect, forwardRef, useCallback } from 'react';
 import type { TextElement, StickerElement } from '../types';
 import { BackgroundMode } from '../types';
 
+type UpdateOptions = {
+  recordHistory?: boolean;
+};
+
+type TextElementSetter = (updater: React.SetStateAction<TextElement>, options?: UpdateOptions) => void;
+
+type StickerUpdater = (id: string, newProps: Partial<StickerElement>, options?: UpdateOptions) => void;
+
 const withOpacity = (hexColor: string, opacity: number): string => {
   if (!hexColor.startsWith('#')) {
     return hexColor;
@@ -25,9 +33,9 @@ const withOpacity = (hexColor: string, opacity: number): string => {
 
 interface CanvasAreaProps {
   ayah: TextElement;
-  setAyah: React.Dispatch<React.SetStateAction<TextElement>>;
+  setAyah: TextElementSetter;
   translation: TextElement;
-  setTranslation: React.Dispatch<React.SetStateAction<TextElement>>;
+  setTranslation: TextElementSetter;
   textColor: string;
   bgColor: string;
   backgroundMode: BackgroundMode;
@@ -35,7 +43,7 @@ interface CanvasAreaProps {
   draggingElement: string | null;
   setDraggingElement: React.Dispatch<React.SetStateAction<string | null>>;
   stickers: StickerElement[];
-  onUpdateSticker: (id: string, newProps: Partial<StickerElement>) => void;
+  onUpdateSticker: StickerUpdater;
   onRemoveSticker: (id: string) => void;
   activeElementId: string | null;
   setActiveElementId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -44,7 +52,7 @@ interface CanvasAreaProps {
 
 interface DraggableTextProps {
   element: TextElement;
-  onPositionChange: (pos: { x: number; y: number }) => void;
+  onPositionChange: (pos: { x: number; y: number }, options?: UpdateOptions) => void;
   style: React.CSSProperties;
   canvasRef: React.RefObject<HTMLDivElement>;
   isDraggingClass: string;
@@ -64,6 +72,8 @@ const DraggableText: React.FC<DraggableTextProps> = ({
   setDraggingElement,
 }) => {
   const elemRef = useRef<HTMLDivElement>(null);
+  const pendingPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const frameRef = useRef<number | null>(null);
 
   useEffect(() => {
     const el = elemRef.current;
@@ -74,11 +84,17 @@ const DraggableText: React.FC<DraggableTextProps> = ({
         const canvasWidth = canvasEl.offsetWidth;
         const elWidth = el.offsetWidth;
         const centeredX = (canvasWidth - elWidth) / 2;
-        onPositionChange({ x: centeredX, y: element.position.y });
+        onPositionChange({ x: centeredX, y: element.position.y }, { recordHistory: false });
         el.style.visibility = 'visible';
       }, 0);
     }
   }, [canvasRef, element.position.x, element.position.y, onPositionChange]);
+
+  useEffect(() => () => {
+    if (frameRef.current !== null) {
+      window.cancelAnimationFrame(frameRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     const el = elemRef.current;
@@ -86,9 +102,26 @@ const DraggableText: React.FC<DraggableTextProps> = ({
 
     const classes = isDraggingClass.split(' ').filter(Boolean);
 
+    const schedulePositionUpdate = (position: { x: number; y: number }) => {
+      pendingPositionRef.current = position;
+
+      if (frameRef.current !== null) {
+        return;
+      }
+
+      frameRef.current = window.requestAnimationFrame(() => {
+        frameRef.current = null;
+
+        if (pendingPositionRef.current) {
+          onPositionChange(pendingPositionRef.current, { recordHistory: false });
+        }
+      });
+    };
+
     const handleMouseDown = (e: MouseEvent | TouchEvent) => {
       e.preventDefault();
       setDraggingElement(id);
+      pendingPositionRef.current = null;
       el.classList.add(...classes);
       const canvasRect = canvasRef.current!.getBoundingClientRect();
 
@@ -120,12 +153,23 @@ const DraggableText: React.FC<DraggableTextProps> = ({
         newX = Math.max(0, Math.min(newX, canvasRect.width - el.offsetWidth));
         newY = Math.max(0, Math.min(newY, canvasRect.height - el.offsetHeight));
 
-        onPositionChange({ x: newX, y: newY });
+        schedulePositionUpdate({ x: newX, y: newY });
       };
 
       const handleMouseUp = () => {
         setDraggingElement(null);
         el.classList.remove(...classes);
+
+        if (frameRef.current !== null) {
+          window.cancelAnimationFrame(frameRef.current);
+          frameRef.current = null;
+        }
+
+        if (pendingPositionRef.current) {
+          onPositionChange(pendingPositionRef.current, { recordHistory: true });
+          pendingPositionRef.current = null;
+        }
+
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
         document.removeEventListener('touchmove', handleMouseMove);
@@ -180,12 +224,20 @@ const DraggableText: React.FC<DraggableTextProps> = ({
 
 const Sticker: React.FC<{
   sticker: StickerElement;
-  onUpdate: (id: string, props: Partial<StickerElement>) => void;
+  onUpdate: StickerUpdater;
   onRemove: (id: string) => void;
   onSelect: (id: string) => void;
   isActive: boolean;
 }> = ({ sticker, onUpdate, onRemove, onSelect, isActive }) => {
   const ref = useRef<HTMLDivElement>(null);
+  const pendingUpdateRef = useRef<Partial<StickerElement> | null>(null);
+  const frameRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (frameRef.current !== null) {
+      window.cancelAnimationFrame(frameRef.current);
+    }
+  }, []);
 
   const handleInteraction = useCallback((e: MouseEvent | TouchEvent, interactionType: 'drag' | 'resize' | 'rotate') => {
     e.preventDefault();
@@ -206,12 +258,28 @@ const Sticker: React.FC<{
     const startAngle = Math.atan2(startY - centerY, startX - centerX);
     const startDist = Math.hypot(startX - centerX, startY - centerY);
 
+    const scheduleStickerUpdate = (props: Partial<StickerElement>) => {
+      pendingUpdateRef.current = props;
+
+      if (frameRef.current !== null) {
+        return;
+      }
+
+      frameRef.current = window.requestAnimationFrame(() => {
+        frameRef.current = null;
+
+        if (pendingUpdateRef.current) {
+          onUpdate(sticker.id, pendingUpdateRef.current, { recordHistory: false });
+        }
+      });
+    };
+
     const handleMouseMove = (me: MouseEvent | TouchEvent) => {
       const moveX = 'touches' in me ? me.touches[0].clientX : me.clientX;
       const moveY = 'touches' in me ? me.touches[0].clientY : me.clientY;
 
       if (interactionType === 'drag') {
-        onUpdate(sticker.id, {
+        scheduleStickerUpdate({
           position: {
             x: startPosition.x + (moveX - startX),
             y: startPosition.y + (moveY - startY),
@@ -219,7 +287,7 @@ const Sticker: React.FC<{
         });
       } else if (interactionType === 'rotate') {
         const angle = Math.atan2(moveY - centerY, moveX - centerX);
-        onUpdate(sticker.id, { rotation: startRotation + ((angle - startAngle) * 180) / Math.PI });
+        scheduleStickerUpdate({ rotation: startRotation + ((angle - startAngle) * 180) / Math.PI });
       } else {
         const dist = Math.hypot(moveX - centerX, moveY - centerY);
         const newWidth = Math.max(20, startWidth * (dist / startDist));
@@ -231,7 +299,7 @@ const Sticker: React.FC<{
         const rotatedOffsetX = offsetX * Math.cos(theta) - offsetY * Math.sin(theta);
         const rotatedOffsetY = offsetX * Math.sin(theta) + offsetY * Math.cos(theta);
 
-        onUpdate(sticker.id, {
+        scheduleStickerUpdate({
           width: newWidth,
           position: {
             x: startPosition.x + rotatedOffsetX,
@@ -242,6 +310,16 @@ const Sticker: React.FC<{
     };
 
     const handleMouseUp = () => {
+      if (frameRef.current !== null) {
+        window.cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+
+      if (pendingUpdateRef.current) {
+        onUpdate(sticker.id, pendingUpdateRef.current, { recordHistory: true });
+        pendingUpdateRef.current = null;
+      }
+
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('touchmove', handleMouseMove);
@@ -307,12 +385,12 @@ const CanvasArea = forwardRef<HTMLDivElement, CanvasAreaProps>((props, ref) => {
     onSelectSticker,
   } = props;
 
-  const handleAyahPosChange = useCallback((pos: { x: number; y: number }) => {
-    setAyah((a) => ({ ...a, position: pos }));
+  const handleAyahPosChange = useCallback((pos: { x: number; y: number }, options?: UpdateOptions) => {
+    setAyah((a) => (a.position.x === pos.x && a.position.y === pos.y ? a : { ...a, position: pos }), options);
   }, [setAyah]);
 
-  const handleTranslationPosChange = useCallback((pos: { x: number; y: number }) => {
-    setTranslation((t) => ({ ...t, position: pos }));
+  const handleTranslationPosChange = useCallback((pos: { x: number; y: number }, options?: UpdateOptions) => {
+    setTranslation((t) => (t.position.x === pos.x && t.position.y === pos.y ? t : { ...t, position: pos }), options);
   }, [setTranslation]);
 
   const canvasClasses = ['relative w-full h-full overflow-hidden transition-all duration-300'];

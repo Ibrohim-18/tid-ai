@@ -1,9 +1,11 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Image, Languages, Palette, Sparkles, Type } from 'lucide-react';
+import { Download, Image, Languages, Palette, Redo2, Sparkles, Type, Undo2 } from 'lucide-react';
 import type { TextElement, CustomFont } from '../types';
 import { Language, BackgroundMode } from '../types';
 import { InputWithTags } from './ui/input-with-tags';
 import { RainbowButton } from './ui/rainbow-button';
+
+type TextElementSetter = (updater: React.SetStateAction<TextElement>, options?: { recordHistory?: boolean }) => void;
 
 interface FontOption {
   value: string;
@@ -13,9 +15,9 @@ interface FontOption {
 
 interface ControlsPanelProps {
   ayah: TextElement;
-  setAyah: React.Dispatch<React.SetStateAction<TextElement>>;
+  setAyah: TextElementSetter;
   translation: TextElement;
-  setTranslation: React.Dispatch<React.SetStateAction<TextElement>>;
+  setTranslation: TextElementSetter;
   language: Language;
   onLanguageChange: (lang: Language) => void;
   textColor: string;
@@ -40,6 +42,10 @@ interface ControlsPanelProps {
   onStickerUpload: (src: string) => void;
   userStickers: string[];
   onRemoveUserSticker: (src: string) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
 }
 
 const inputClass = 'w-full rounded-[24px] border border-white/10 bg-[#111111c9] px-5 py-4 text-white shadow-[0_0_24px_rgba(0,0,0,0.18)] outline-none transition duration-200 placeholder:text-white/35 focus:border-white/20 focus:ring-4 focus:ring-white/10';
@@ -99,6 +105,18 @@ const ToolbarButton: React.FC<{ onClick: (e: React.MouseEvent<HTMLButtonElement>
   );
 };
 
+const ToolbarIconButton: React.FC<{ onClick: () => void; icon: React.ComponentType<{ className?: string }>; label: string; disabled?: boolean }> = ({ onClick, icon: Icon, label, disabled = false }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    aria-label={label}
+    title={label}
+    className={`flex h-11 w-11 items-center justify-center rounded-2xl border transition-all duration-200 ${disabled ? 'cursor-not-allowed border-white/6 bg-white/[0.04] text-white/25' : 'border-white/10 bg-white/6 text-white/80 shadow-sm hover:-translate-y-0.5 hover:bg-white/10 hover:text-white'}`}
+  >
+    <Icon className="h-4 w-4" />
+  </button>
+);
+
 const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
@@ -157,6 +175,10 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
         <div ref={controlsRef} className="relative">
           <div className="flex flex-wrap items-center justify-center gap-2 rounded-[28px] border border-white/12 bg-[#09090bd6] p-2.5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:gap-2.5">
             <ToolbarButton onClick={(e) => { e.stopPropagation(); toggleMenu('text'); }} isActive={activeMenu === 'text'} icon={Sparkles} rainbow>Text & AI</ToolbarButton>
+            <div className="flex gap-1.5">
+              <ToolbarIconButton onClick={props.onUndo} icon={Undo2} label="Undo" disabled={!props.canUndo} />
+              <ToolbarIconButton onClick={props.onRedo} icon={Redo2} label="Redo" disabled={!props.canRedo} />
+            </div>
             <ToolbarButton onClick={(e) => { e.stopPropagation(); toggleMenu('fonts'); }} isActive={activeMenu === 'fonts'} icon={Type}>Fonts</ToolbarButton>
             <ToolbarButton onClick={(e) => { e.stopPropagation(); toggleMenu('stickers'); }} isActive={activeMenu === 'stickers'} icon={Image}>Stickers</ToolbarButton>
             <ToolbarButton onClick={(e) => { e.stopPropagation(); toggleMenu('style'); }} isActive={activeMenu === 'style'} icon={Palette}>Style</ToolbarButton>
@@ -184,28 +206,39 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
 
           {activeMenu === 'text' && (
             <TextWorkspacePanel onClose={() => setActiveMenu(null)}>
-              <div className="space-y-4">
-                <div className="rounded-[30px] border border-white/10 bg-white/5 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
-                  <label className="mb-1.5 block text-sm font-medium text-white/70">Ayah</label>
-                  <textarea className={`${inputClass} min-h-[120px] resize-y text-lg lg:min-h-[150px]`} style={{ fontFamily: "'Amiri', serif", direction: 'rtl' }} value={props.ayah.text} onChange={(e) => props.setAyah((a) => ({ ...a, text: e.target.value, position: { ...a.position, x: -1 } }))} />
-                  <RainbowButton onClick={props.onApplyKashida} disabled={props.isApplyingKashida || !props.ayah.text.trim()} className="mt-3 w-full text-sm font-semibold">
+              <div className="space-y-5">
+                <section className="space-y-3">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-white/70">Ayah</label>
+                    <p className="text-xs leading-5 text-white/50">Edit the Arabic text directly and apply fast Kashida without extra popups.</p>
+                  </div>
+                  <textarea className={`${inputClass} min-h-[120px] resize-y border-white/8 bg-transparent px-0 py-0 text-lg shadow-none focus:border-white/15 lg:min-h-[150px]`} style={{ fontFamily: "'Amiri', serif", direction: 'rtl' }} value={props.ayah.text} onChange={(e) => props.setAyah((a) => ({ ...a, text: e.target.value, position: { ...a.position, x: -1 } }))} />
+                  <RainbowButton onClick={props.onApplyKashida} disabled={props.isApplyingKashida || !props.ayah.text.trim()} className="w-full text-sm font-semibold">
                     {props.isApplyingKashida && <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" aria-hidden="true" />}
                     {props.isApplyingKashida ? 'Adding Kashida...' : 'Enhance with Kashida'}
                   </RainbowButton>
-                  <p className="mt-2 text-xs leading-5 text-white/55">
+                  <p className="text-xs leading-5 text-white/55">
                     {props.isApplyingKashida ? 'Applying fast local calligraphic stretch...' : 'Fast local Kashida adds calligraphic elongation without waiting for AI.'}
                   </p>
-                </div>
-                <div className="rounded-[30px] border border-white/10 bg-white/5 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
-                  <label className="mb-1.5 block text-sm font-medium text-white/70">Translation</label>
-                  <textarea className={`${inputClass} min-h-[120px] resize-y lg:min-h-[150px]`} value={props.translation.text} onChange={(e) => props.setTranslation((t) => ({ ...t, text: e.target.value, position: { ...t.position, x: -1 } }))} />
-                  <label className="mb-2 mt-4 block text-sm font-medium text-white/70">Manual highlight words</label>
-                  <InputWithTags value={props.highlightedWords} onChange={props.setHighlightedWords} limit={12} className="max-w-none" placeholder="Add highlight words and press Enter..." />
-                  <p className="mt-2 text-xs leading-5 text-white/55">You can add or remove highlight words manually, or let AI suggest them.</p>
-                  <RainbowButton onClick={props.onHighlight} disabled={props.isHighlighting} className="mt-4 w-full text-sm font-semibold">
+                </section>
+
+                <div className="h-px bg-white/10" />
+
+                <section className="space-y-3">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-white/70">Translation</label>
+                    <p className="text-xs leading-5 text-white/50">Keep this area clean and focus only on the text, tags and AI highlight action.</p>
+                  </div>
+                  <textarea className={`${inputClass} min-h-[120px] resize-y border-white/8 bg-transparent px-0 py-0 shadow-none focus:border-white/15 lg:min-h-[150px]`} value={props.translation.text} onChange={(e) => props.setTranslation((t) => ({ ...t, text: e.target.value, position: { ...t.position, x: -1 } }))} />
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white/70">Manual highlight words</label>
+                    <InputWithTags value={props.highlightedWords} onChange={props.setHighlightedWords} limit={12} className="max-w-none" placeholder="Add highlight words and press Enter..." />
+                  </div>
+                  <p className="text-xs leading-5 text-white/55">You can add or remove highlight words manually, or let AI suggest them.</p>
+                  <RainbowButton onClick={props.onHighlight} disabled={props.isHighlighting} className="w-full text-sm font-semibold">
                     {props.isHighlighting ? 'Analyzing...' : 'Highlight Key Words'}
                   </RainbowButton>
-                </div>
+                </section>
               </div>
             </TextWorkspacePanel>
           )}
@@ -309,4 +342,30 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   );
 };
 
-export default ControlsPanel;
+const areTextPanelFieldsEqual = (prev: TextElement, next: TextElement) => (
+  prev.text === next.text
+  && prev.font === next.font
+  && prev.size === next.size
+);
+
+const areControlsPanelPropsEqual = (prev: ControlsPanelProps, next: ControlsPanelProps) => (
+  areTextPanelFieldsEqual(prev.ayah, next.ayah)
+  && areTextPanelFieldsEqual(prev.translation, next.translation)
+  && prev.language === next.language
+  && prev.textColor === next.textColor
+  && prev.bgColor === next.bgColor
+  && prev.backgroundMode === next.backgroundMode
+  && prev.customFonts === next.customFonts
+  && prev.arabicFonts === next.arabicFonts
+  && prev.translationFonts === next.translationFonts
+  && prev.highlightedWords === next.highlightedWords
+  && prev.userStickers === next.userStickers
+  && prev.isHighlighting === next.isHighlighting
+  && prev.isApplyingKashida === next.isApplyingKashida
+  && prev.canUndo === next.canUndo
+  && prev.canRedo === next.canRedo
+  && prev.onUndo === next.onUndo
+  && prev.onRedo === next.onRedo
+);
+
+export default React.memo(ControlsPanel, areControlsPanelPropsEqual);
