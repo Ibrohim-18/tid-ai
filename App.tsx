@@ -709,6 +709,9 @@ const App: React.FC = () => {
           background-image: none !important;
           box-shadow: none !important;
         }
+        #canvas.exporting.exporting-transparent .cybernetic-grid-shader {
+          display: none !important;
+        }
         #canvas.exporting.exporting-transparent .canvas-text {
           -webkit-font-smoothing: antialiased;
           text-rendering: geometricPrecision;

@@ -1,6 +1,8 @@
-import React, { useRef, useEffect, forwardRef, useCallback } from 'react';
+import React, { Suspense, useRef, useEffect, forwardRef, useCallback } from 'react';
 import type { TextElement, StickerElement } from '../types';
 import { BackgroundMode } from '../types';
+
+const CyberneticGridShader = React.lazy(() => import('@/components/ui/cybernetic-grid-shader'));
 
 type UpdateOptions = {
   recordHistory?: boolean;
@@ -446,6 +448,11 @@ const CanvasArea = forwardRef<HTMLDivElement, CanvasAreaProps>((props, ref) => {
 
   return (
     <div id="canvas" ref={ref} className={canvasClasses.join(' ')} style={canvasStyles} onMouseDown={handleCanvasClick}>
+      {backgroundMode === BackgroundMode.TRANSPARENT && (
+        <Suspense fallback={null}>
+          <CyberneticGridShader className="opacity-90" />
+        </Suspense>
+      )}
       {draggingElement && (
         <>
           <div className="absolute top-1/2 left-0 w-full h-0 border-t border-dashed border-gray-400/80 pointer-events-none z-20" aria-hidden="true" />

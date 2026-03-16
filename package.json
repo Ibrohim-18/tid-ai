@@ -15,7 +15,8 @@
     "framer-motion": "^12.36.0",
     "lucide-react": "^0.577.0",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "three": "^0.183.2"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
