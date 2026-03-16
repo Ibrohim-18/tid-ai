@@ -709,6 +709,21 @@ const App: React.FC = () => {
           background-image: none !important;
           box-shadow: none !important;
         }
+        #canvas.exporting.exporting-transparent .canvas-text {
+          -webkit-font-smoothing: antialiased;
+          text-rendering: geometricPrecision;
+        }
+        #canvas.exporting.exporting-transparent .canvas-text-ayah {
+          color: rgba(255,255,255,0.98) !important;
+          text-shadow: 0 1px 10px rgba(255,255,255,0.06);
+        }
+        #canvas.exporting.exporting-transparent .canvas-text-translation {
+          color: rgba(255,255,255,0.9) !important;
+          text-shadow: 0 1px 10px rgba(255,255,255,0.08);
+        }
+        #canvas.exporting.exporting-transparent .canvas-text-translation .highlight {
+          color: rgba(255,255,255,0.96) !important;
+        }
         #canvas.exporting .draggable-text-wrapper { transform: none !important; }
         #canvas.exporting .sticker-control, #canvas.exporting .sticker-border { display: none !important; }
         .highlight { color: rgba(255,255,255,0.84); font-weight: 600; text-shadow: 0 1px 8px rgba(255,255,255,0.08); }

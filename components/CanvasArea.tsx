@@ -206,7 +206,7 @@ const DraggableText: React.FC<DraggableTextProps> = ({
   return (
     <div
       ref={elemRef}
-      className="absolute cursor-move select-none draggable-text-wrapper"
+      className={`absolute cursor-move select-none draggable-text-wrapper canvas-text canvas-text-${id}`}
       style={{
         ...style,
         left: `${element.position.x}px`,
