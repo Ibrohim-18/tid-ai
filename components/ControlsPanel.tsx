@@ -31,7 +31,6 @@ interface ControlsPanelProps {
   isHighlighting: boolean;
   onApplyKashida: () => void;
   isApplyingKashida: boolean;
-  isApplyingKashidaSlow: boolean;
   onAddSticker: (src: string) => void;
   onStickerUpload: (src: string) => void;
   userStickers: string[];
@@ -146,11 +145,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                     {props.isApplyingKashida ? 'Adding Kashida...' : 'Enhance with Kashida'}
                   </button>
                   <p className="mt-2 text-xs leading-5 text-slate-500">
-                    {props.isApplyingKashida
-                      ? props.isApplyingKashidaSlow
-                        ? 'Still working — Arabic styling can take a little longer for AI processing.'
-                        : 'Applying calligraphic elongation...'
-                      : 'One tap adds calligraphic elongation while keeping the original Arabic text.'}
+                    {props.isApplyingKashida ? 'Applying fast local calligraphic stretch...' : 'Fast local Kashida adds calligraphic elongation without waiting for AI.'}
                   </p>
                 </div>
                 <div>

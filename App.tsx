@@ -19,6 +19,11 @@ interface AppState {
   userStickers: string[];
 }
 
+const ARABIC_DIACRITICS_REGEX = /[\u064B-\u065F\u0670\u06D6-\u06ED]/;
+const ARABIC_BASE_LETTER_REGEX = /[\u0621-\u064A]/;
+const STRETCHABLE_ARABIC_LETTERS = new Set(['ب', 'ت', 'ث', 'ج', 'ح', 'خ', 'س', 'ش', 'ص', 'ض', 'ط', 'ظ', 'ع', 'غ', 'ف', 'ق', 'ك', 'ل', 'م', 'ن', 'ه', 'ي']);
+const NON_CONNECTING_ARABIC_LETTERS = new Set(['ا', 'أ', 'إ', 'آ', 'د', 'ذ', 'ر', 'ز', 'و', 'ؤ', 'ء']);
+
 const getInitialDefaultState = (): AppState => {
   const isMobile = window.innerWidth < 768;
 
@@ -46,6 +51,76 @@ const getInitialDefaultState = (): AppState => {
   };
 };
 
+const splitArabicGlyphs = (word: string): string[] => {
+  const glyphs: string[] = [];
+
+  for (const char of Array.from(word)) {
+    if (ARABIC_DIACRITICS_REGEX.test(char) && glyphs.length > 0) {
+      glyphs[glyphs.length - 1] += char;
+    } else {
+      glyphs.push(char);
+    }
+  }
+
+  return glyphs;
+};
+
+const getBaseLetter = (glyph: string): string => {
+  for (const char of Array.from(glyph)) {
+    if (!ARABIC_DIACRITICS_REGEX.test(char) && char !== 'ـ') {
+      return char;
+    }
+  }
+
+  return '';
+};
+
+const addFastKashidaToWord = (word: string): string => {
+  const normalizedWord = word.replace(/ـ+/g, '');
+  const glyphs = splitArabicGlyphs(normalizedWord);
+  if (glyphs.length < 4) return word;
+
+  const candidates: number[] = [];
+
+  for (let index = 0; index < glyphs.length - 1; index += 1) {
+    const currentLetter = getBaseLetter(glyphs[index]);
+    const nextLetter = getBaseLetter(glyphs[index + 1]);
+
+    if (!ARABIC_BASE_LETTER_REGEX.test(currentLetter) || !ARABIC_BASE_LETTER_REGEX.test(nextLetter)) continue;
+    if (!STRETCHABLE_ARABIC_LETTERS.has(currentLetter)) continue;
+    if (NON_CONNECTING_ARABIC_LETTERS.has(nextLetter)) continue;
+    if (index === 0 || index === glyphs.length - 2) continue;
+
+    candidates.push(index);
+  }
+
+  if (candidates.length === 0) {
+    return word;
+  }
+
+  const center = (glyphs.length - 1) / 2;
+  const insertions = Math.min(candidates.length, glyphs.length >= 8 ? 2 : 1);
+  const selected = [...candidates]
+    .sort((a, b) => Math.abs(a - center) - Math.abs(b - center))
+    .slice(0, insertions)
+    .sort((a, b) => a - b);
+
+  let offset = 0;
+  for (const index of selected) {
+    glyphs.splice(index + 1 + offset, 0, 'ـ');
+    offset += 1;
+  }
+
+  return glyphs.join('');
+};
+
+const applyFastKashida = (text: string): string => {
+  return text
+    .split(/(\s+)/)
+    .map((token) => (ARABIC_BASE_LETTER_REGEX.test(token) ? addFastKashidaToWord(token) : token))
+    .join('');
+};
+
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(() => {
     const defaultState = getInitialDefaultState();
@@ -67,7 +142,6 @@ const App: React.FC = () => {
 
   const [isHighlighting, setIsHighlighting] = useState(false);
   const [isApplyingKashida, setIsApplyingKashida] = useState(false);
-  const [isKashidaTakingLong, setIsKashidaTakingLong] = useState(false);
   const [draggingElement, setDraggingElement] = useState<string | null>(null);
   const [activeElementId, setActiveElementId] = useState<string | null>(null);
 
@@ -205,28 +279,16 @@ const App: React.FC = () => {
     }
   }, [appState.translation.text]);
 
-  const handleApplyKashida = useCallback(async () => {
+  const handleApplyKashida = useCallback(() => {
     if (!appState.ayah.text) return;
 
     setIsApplyingKashida(true);
-    setIsKashidaTakingLong(false);
-    const slowTimer = window.setTimeout(() => setIsKashidaTakingLong(true), 3500);
-
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Add Arabic kashida (tatweel, character: 'ـ') only where it is calligraphically appropriate. Keep every original Arabic letter and harakah unchanged. Return only the updated Arabic text with no explanation. Text: "${appState.ayah.text}"`,
-      });
-      const newText = response.text.trim();
-      if (newText) {
+      const newText = applyFastKashida(appState.ayah.text);
+      if (newText && newText !== appState.ayah.text) {
         setAyah((a) => ({ ...a, text: newText, position: { ...a.position, x: -1 } }));
       }
-    } catch (error) {
-      console.error('Error applying kashida:', error);
     } finally {
-      window.clearTimeout(slowTimer);
-      setIsKashidaTakingLong(false);
       setIsApplyingKashida(false);
     }
   }, [appState.ayah.text, setAyah]);
@@ -421,7 +483,6 @@ const App: React.FC = () => {
         isHighlighting={isHighlighting}
         onApplyKashida={handleApplyKashida}
         isApplyingKashida={isApplyingKashida}
-        isApplyingKashidaSlow={isKashidaTakingLong}
         onAddSticker={handleAddSticker}
         onStickerUpload={handleStickerUpload}
         userStickers={appState.userStickers}
@@ -435,7 +496,7 @@ const App: React.FC = () => {
         #canvas.exporting { border: none !important; }
         #canvas.exporting .draggable-text-wrapper { transform: none !important; }
         #canvas.exporting .sticker-control, #canvas.exporting .sticker-border { display: none !important; }
-        .highlight { color: #ffffff; font-weight: 600; text-shadow: 0 1px 10px rgba(255,255,255,0.12); }
+        .highlight { color: rgba(255,255,255,0.84); font-weight: 600; text-shadow: 0 1px 8px rgba(255,255,255,0.08); }
       `}</style>
     </div>
   );
