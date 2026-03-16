@@ -75,11 +75,7 @@ const getBaseLetter = (glyph: string): string => {
   return '';
 };
 
-const addFastKashidaToWord = (word: string): string => {
-  const normalizedWord = word.replace(/ـ+/g, '');
-  const glyphs = splitArabicGlyphs(normalizedWord);
-  if (glyphs.length < 4) return word;
-
+const getKashidaCandidateIndexes = (glyphs: string[]): number[] => {
   const candidates: number[] = [];
 
   for (let index = 0; index < glyphs.length - 1; index += 1) {
@@ -94,24 +90,58 @@ const addFastKashidaToWord = (word: string): string => {
     candidates.push(index);
   }
 
+  return candidates;
+};
+
+const getPreferredKashidaOrder = (candidates: number[], glyphCount: number): number[] => {
+  const center = (glyphCount - 1) / 2;
+
+  return [...candidates].sort((a, b) => {
+    const distanceDiff = Math.abs(a - center) - Math.abs(b - center);
+    return distanceDiff !== 0 ? distanceDiff : a - b;
+  });
+};
+
+const buildTatweelPlan = (candidateOrder: number[], totalTatweels: number): Map<number, number> => {
+  const plan = new Map<number, number>();
+
+  candidateOrder.forEach((index) => plan.set(index, 0));
+
+  for (let step = 0; step < totalTatweels; step += 1) {
+    const targetIndex = candidateOrder[step % candidateOrder.length];
+    plan.set(targetIndex, (plan.get(targetIndex) ?? 0) + 1);
+  }
+
+  return plan;
+};
+
+const addFastKashidaToWord = (word: string): string => {
+  const existingTatweels = (word.match(/ـ/g) ?? []).length;
+  const normalizedWord = word.replace(/ـ+/g, '');
+  const glyphs = splitArabicGlyphs(normalizedWord);
+  if (glyphs.length < 4) return word;
+
+  const candidates = getKashidaCandidateIndexes(glyphs);
+
   if (candidates.length === 0) {
     return word;
   }
 
-  const center = (glyphs.length - 1) / 2;
-  const insertions = Math.min(candidates.length, glyphs.length >= 8 ? 2 : 1);
-  const selected = [...candidates]
-    .sort((a, b) => Math.abs(a - center) - Math.abs(b - center))
-    .slice(0, insertions)
-    .sort((a, b) => a - b);
+  const stepSize = glyphs.length >= 8 ? 2 : 1;
+  const targetTatweels = Math.min(existingTatweels + stepSize, candidates.length * 3);
+  const tatweelPlan = buildTatweelPlan(getPreferredKashidaOrder(candidates, glyphs.length), targetTatweels);
+  const stretchedGlyphs: string[] = [];
 
-  let offset = 0;
-  for (const index of selected) {
-    glyphs.splice(index + 1 + offset, 0, 'ـ');
-    offset += 1;
-  }
+  glyphs.forEach((glyph, index) => {
+    stretchedGlyphs.push(glyph);
 
-  return glyphs.join('');
+    const tatweelsAfterGlyph = tatweelPlan.get(index) ?? 0;
+    if (tatweelsAfterGlyph > 0) {
+      stretchedGlyphs.push('ـ'.repeat(tatweelsAfterGlyph));
+    }
+  });
+
+  return stretchedGlyphs.join('');
 };
 
 const applyFastKashida = (text: string): string => {
@@ -208,6 +238,7 @@ const App: React.FC = () => {
   const setTextColor = useCallback((color: string) => setAppState((s) => ({ ...s, textColor: color })), []);
   const setBgColor = useCallback((color: string) => setAppState((s) => ({ ...s, bgColor: color })), []);
   const setBackgroundMode = useCallback((mode: BackgroundMode) => setAppState((s) => ({ ...s, backgroundMode: mode })), []);
+  const setHighlightedWords = useCallback((words: string[]) => setAppState((s) => ({ ...s, highlightedWords: words })), []);
 
   const handleFontUpload = useCallback((file: File) => {
     const reader = new FileReader();
@@ -481,6 +512,8 @@ const App: React.FC = () => {
         onDownload={handleDownloadImage}
         onHighlight={handleHighlightWords}
         isHighlighting={isHighlighting}
+        highlightedWords={appState.highlightedWords}
+        setHighlightedWords={setHighlightedWords}
         onApplyKashida={handleApplyKashida}
         isApplyingKashida={isApplyingKashida}
         onAddSticker={handleAddSticker}
