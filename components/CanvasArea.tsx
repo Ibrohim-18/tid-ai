@@ -323,18 +323,30 @@ const CanvasArea = forwardRef<HTMLDivElement, CanvasAreaProps>((props, ref) => {
   } else if (backgroundMode === BackgroundMode.GRADIENT) {
     canvasClasses.push('bg-gradient-to-br from-indigo-500 to-purple-600');
   } else {
-    canvasClasses.push("bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAACRJREFUOE9jZGBgEGHAD97/p08f4i58+PChH5AR6kaQfQBN0QEAm400y+QxImMAAAAASUVORK5CYII=')] bg-repeat");
     canvasStyles.backgroundColor = 'transparent';
+    canvasStyles.backgroundImage = [
+      'linear-gradient(45deg, rgba(255,255,255,0.08) 25%, transparent 25%)',
+      'linear-gradient(-45deg, rgba(255,255,255,0.08) 25%, transparent 25%)',
+      'linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.08) 75%)',
+      'linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.08) 75%)',
+    ].join(', ');
+    canvasStyles.backgroundSize = '36px 36px';
+    canvasStyles.backgroundPosition = '0 0, 0 18px, 18px -18px, -18px 0';
+    canvasStyles.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.06)';
   }
 
-  const effectiveTextColor = backgroundMode === BackgroundMode.GRADIENT
+  const ayahTextColor = backgroundMode === BackgroundMode.GRADIENT
     ? '#ffffff'
     : textColor;
+
+  const translationTextColor = backgroundMode === BackgroundMode.GRADIENT
+    ? 'rgba(255, 255, 255, 0.68)'
+    : withOpacity(textColor, 0.68);
 
   const ayahStyle: React.CSSProperties = {
     fontFamily: ayah.font,
     fontSize: `${ayah.size}px`,
-    color: effectiveTextColor,
+    color: ayahTextColor,
     direction: 'rtl',
     textAlign: 'center',
     lineHeight: 2.5,
@@ -343,7 +355,7 @@ const CanvasArea = forwardRef<HTMLDivElement, CanvasAreaProps>((props, ref) => {
   const translationStyle: React.CSSProperties = {
     fontFamily: translation.font,
     fontSize: `${translation.size}px`,
-    color: effectiveTextColor,
+    color: translationTextColor,
     textAlign: 'center',
     lineHeight: 1.6,
   };
