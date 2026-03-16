@@ -613,7 +613,7 @@ const App: React.FC = () => {
           canvasElement.classList.remove('exporting');
           canvasElement.classList.remove('exporting-transparent');
           const link = document.createElement('a');
-          link.download = `ayah_${Date.now()}.${format}`;
+          link.download = `ayah.${format}`;
 
           if (format === 'jpeg') {
             const jpegCanvas = document.createElement('canvas');
