@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Image, Languages, Palette, Redo2, Sparkles, Type, Undo2 } from 'lucide-react';
+import { Download, Eraser, Image, Languages, Palette, Redo2, Sparkles, Type, Undo2 } from 'lucide-react';
 import type { TextElement, CustomFont } from '../types';
 import { Language, BackgroundMode } from '../types';
 import { InputWithTags } from './ui/input-with-tags';
@@ -52,6 +52,8 @@ const inputClass = 'w-full rounded-[24px] border border-white/10 bg-[#111111c9] 
 const selectClass = `${inputClass} appearance-none`;
 const cardClass = 'rounded-[26px] border border-white/10 bg-white/5 p-3 shadow-[0_10px_30px_rgba(0,0,0,0.14)] backdrop-blur-xl';
 const uploadClass = 'block w-full cursor-pointer rounded-[22px] border border-dashed border-white/15 bg-white/5 px-4 py-3 text-center text-sm font-medium text-white/75 transition hover:border-white/25 hover:bg-white/10 hover:text-white';
+const textFieldShellClass = 'rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03))] p-4 shadow-[0_18px_44px_rgba(0,0,0,0.18)] backdrop-blur-xl';
+const textFieldTextareaClass = 'w-full min-h-[132px] resize-y rounded-[24px] border border-white/8 bg-[#0b0d12d9] px-4 py-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_10px_30px_rgba(0,0,0,0.18)] outline-none transition duration-200 placeholder:text-white/22 focus:border-white/15 focus:ring-4 focus:ring-white/8 lg:min-h-[156px]';
 
 const Popover: React.FC<{ title: string; children: React.ReactNode; onClose: () => void; className?: string }> = ({ title, children, onClose, className = '' }) => (
   <div className={`absolute top-full left-1/2 z-40 mt-3 w-[calc(100vw-24px)] max-w-[390px] -translate-x-1/2 rounded-[24px] border border-white/12 bg-[#09090be8] p-5 text-white backdrop-blur-2xl shadow-[0_24px_80px_rgba(0,0,0,0.32)] sm:max-w-[430px] ${className}`} onClick={(e) => e.stopPropagation()}>
@@ -117,6 +119,86 @@ const ToolbarIconButton: React.FC<{ onClick: () => void; icon: React.ComponentTy
   </button>
 );
 
+const FieldActionButton: React.FC<{ onClick: () => void; icon: React.ComponentType<{ className?: string }>; label: string; disabled?: boolean }> = ({ onClick, icon: Icon, label, disabled = false }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    aria-label={label}
+    title={label}
+    className={`inline-flex h-10 items-center gap-2 rounded-2xl border px-3 text-xs font-semibold tracking-tight transition-all duration-200 ${disabled ? 'cursor-not-allowed border-white/6 bg-white/[0.04] text-white/25' : 'border-white/10 bg-white/[0.06] text-white/75 shadow-sm hover:-translate-y-0.5 hover:bg-white/10 hover:text-white'}`}
+  >
+    <Icon className="h-4 w-4" />
+    <span>{label}</span>
+  </button>
+);
+
+interface PremiumTextareaFieldProps {
+  label: string;
+  description: string;
+  value: string;
+  placeholder: string;
+  helperText: string;
+  onChange: (value: string) => void;
+  onClear: () => void;
+  clearLabel: string;
+  action: React.ReactNode;
+  textareaClassName?: string;
+  style?: React.CSSProperties;
+  dir?: 'rtl' | 'ltr';
+}
+
+const PremiumTextareaField: React.FC<PremiumTextareaFieldProps> = ({
+  label,
+  description,
+  value,
+  placeholder,
+  helperText,
+  onChange,
+  onClear,
+  clearLabel,
+  action,
+  textareaClassName = '',
+  style,
+  dir = 'ltr',
+}) => {
+  const infoLabel = value.trim() ? `${value.length} chars` : 'Empty field';
+
+  return (
+    <section className={`${textFieldShellClass} space-y-3.5`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 inline-flex rounded-full border border-white/10 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/55">
+            {label}
+          </div>
+          <p className="text-sm leading-5 text-white/60">{description}</p>
+        </div>
+        <FieldActionButton onClick={onClear} icon={Eraser} label={clearLabel} disabled={!value.trim()} />
+      </div>
+
+      <div className="relative">
+        <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/12 to-transparent" aria-hidden="true" />
+        <textarea
+          className={`${textFieldTextareaClass} ${textareaClassName}`}
+          style={style}
+          dir={dir}
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs leading-5 text-white/50">
+          {helperText}
+          <span className="ml-2 text-white/32">• {infoLabel}</span>
+        </p>
+        <div className="flex w-full justify-end sm:w-auto">{action}</div>
+      </div>
+    </section>
+  );
+};
+
 const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
@@ -169,6 +251,14 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     }
   };
 
+  const updateAyahText = (text: string) => {
+    props.setAyah((a) => ({ ...a, text, position: { ...a.position, x: -1 } }));
+  };
+
+  const updateTranslationText = (text: string) => {
+    props.setTranslation((t) => ({ ...t, text, position: { ...t.position, x: -1 } }));
+  };
+
   return (
     <>
       <header className="fixed inset-x-0 top-4 z-30 flex justify-center px-4">
@@ -207,37 +297,61 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
           {activeMenu === 'text' && (
             <TextWorkspacePanel onClose={() => setActiveMenu(null)}>
               <div className="space-y-5">
-                <section className="space-y-3">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-white/70">Ayah</label>
-                    <p className="text-xs leading-5 text-white/50">Edit the Arabic text directly and apply fast Kashida without extra popups.</p>
-                  </div>
-                  <textarea className={`${inputClass} min-h-[120px] resize-y border-white/8 bg-transparent px-0 py-0 text-lg shadow-none focus:border-white/15 lg:min-h-[150px]`} style={{ fontFamily: "'Amiri', serif", direction: 'rtl' }} value={props.ayah.text} onChange={(e) => props.setAyah((a) => ({ ...a, text: e.target.value, position: { ...a.position, x: -1 } }))} />
-                  <RainbowButton onClick={props.onApplyKashida} disabled={props.isApplyingKashida || !props.ayah.text.trim()} className="w-full text-sm font-semibold">
-                    {props.isApplyingKashida && <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" aria-hidden="true" />}
-                    {props.isApplyingKashida ? 'Adding Kashida...' : 'Enhance with Kashida'}
-                  </RainbowButton>
-                  <p className="text-xs leading-5 text-white/55">
-                    {props.isApplyingKashida ? 'Applying fast local calligraphic stretch...' : 'Fast local Kashida adds calligraphic elongation without waiting for AI.'}
-                  </p>
-                </section>
+                <PremiumTextareaField
+                  label="Ayah"
+                  description="Edit the Arabic text in a cleaner writing space and keep Kashida action close without covering the content."
+                  value={props.ayah.text}
+                  placeholder="اكتب الآية هنا..."
+                  helperText={props.isApplyingKashida ? 'Applying fast local calligraphic stretch...' : 'Fast local Kashida adds calligraphic elongation without waiting for AI.'}
+                  onChange={updateAyahText}
+                  onClear={() => updateAyahText('')}
+                  clearLabel="Clear ayah"
+                  dir="rtl"
+                  style={{ fontFamily: "'Amiri', serif" }}
+                  textareaClassName="text-lg"
+                  action={
+                    <RainbowButton onClick={props.onApplyKashida} disabled={props.isApplyingKashida || !props.ayah.text.trim()} className="h-10 px-4 text-sm font-semibold">
+                      {props.isApplyingKashida && <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" aria-hidden="true" />}
+                      {props.isApplyingKashida ? 'Adding Kashida...' : 'Enhance with Kashida'}
+                    </RainbowButton>
+                  }
+                />
 
-                <div className="h-px bg-white/10" />
+                <PremiumTextareaField
+                  label="Translation"
+                  description="Keep translation editing polished and place AI actions outside the writing area so the text stays easy to read."
+                  value={props.translation.text}
+                  placeholder="Write the translation here..."
+                  helperText="You can fine-tune the text manually first, then ask AI to pick highlight words."
+                  onChange={updateTranslationText}
+                  onClear={() => updateTranslationText('')}
+                  clearLabel="Clear translation"
+                  action={
+                    <RainbowButton onClick={props.onHighlight} disabled={props.isHighlighting} className="h-10 px-4 text-sm font-semibold">
+                      {props.isHighlighting ? 'Analyzing...' : 'Highlight Key Words'}
+                    </RainbowButton>
+                  }
+                />
 
-                <section className="space-y-3">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-white/70">Translation</label>
-                    <p className="text-xs leading-5 text-white/50">Keep this area clean and focus only on the text, tags and AI highlight action.</p>
+                <section className={`${textFieldShellClass} space-y-3.5`}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 inline-flex rounded-full border border-white/10 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/55">
+                        Highlight words
+                      </div>
+                      <p className="text-sm leading-5 text-white/60">Add important words manually and keep the selected highlights clean and easy to manage.</p>
+                    </div>
+                    <FieldActionButton onClick={() => props.setHighlightedWords([])} icon={Eraser} label="Clear tags" disabled={!props.highlightedWords.length} />
                   </div>
-                  <textarea className={`${inputClass} min-h-[120px] resize-y border-white/8 bg-transparent px-0 py-0 shadow-none focus:border-white/15 lg:min-h-[150px]`} value={props.translation.text} onChange={(e) => props.setTranslation((t) => ({ ...t, text: e.target.value, position: { ...t.position, x: -1 } }))} />
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-white/70">Manual highlight words</label>
-                    <InputWithTags value={props.highlightedWords} onChange={props.setHighlightedWords} limit={12} className="max-w-none" placeholder="Add highlight words and press Enter..." />
+
+                  <InputWithTags value={props.highlightedWords} onChange={props.setHighlightedWords} limit={12} className="max-w-none" placeholder="Add highlight words and press Enter..." />
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs leading-5 text-white/50">
+                    <p>You can add or remove highlight words manually, or let AI suggest them.</p>
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 font-medium text-white/45">
+                      {props.highlightedWords.length}/12 selected
+                    </span>
                   </div>
-                  <p className="text-xs leading-5 text-white/55">You can add or remove highlight words manually, or let AI suggest them.</p>
-                  <RainbowButton onClick={props.onHighlight} disabled={props.isHighlighting} className="w-full text-sm font-semibold">
-                    {props.isHighlighting ? 'Analyzing...' : 'Highlight Key Words'}
-                  </RainbowButton>
                 </section>
               </div>
             </TextWorkspacePanel>
