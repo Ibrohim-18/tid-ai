@@ -2,6 +2,27 @@ import React, { useRef, useEffect, forwardRef, useCallback } from 'react';
 import type { TextElement, StickerElement } from '../types';
 import { BackgroundMode } from '../types';
 
+const withOpacity = (hexColor: string, opacity: number): string => {
+  if (!hexColor.startsWith('#')) {
+    return hexColor;
+  }
+
+  const hex = hexColor.slice(1);
+  const normalized = hex.length === 3
+    ? hex.split('').map((char) => char + char).join('')
+    : hex;
+
+  if (normalized.length !== 6) {
+    return hexColor;
+  }
+
+  const red = Number.parseInt(normalized.slice(0, 2), 16);
+  const green = Number.parseInt(normalized.slice(2, 4), 16);
+  const blue = Number.parseInt(normalized.slice(4, 6), 16);
+
+  return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
+};
+
 interface CanvasAreaProps {
   ayah: TextElement;
   setAyah: React.Dispatch<React.SetStateAction<TextElement>>;
@@ -306,7 +327,9 @@ const CanvasArea = forwardRef<HTMLDivElement, CanvasAreaProps>((props, ref) => {
     canvasStyles.backgroundColor = 'transparent';
   }
 
-  const effectiveTextColor = backgroundMode === BackgroundMode.GRADIENT ? '#FFFFFF' : textColor;
+  const effectiveTextColor = backgroundMode === BackgroundMode.GRADIENT
+    ? 'rgba(255, 255, 255, 0.8)'
+    : withOpacity(textColor, 0.8);
 
   const ayahStyle: React.CSSProperties = {
     fontFamily: ayah.font,

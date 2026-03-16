@@ -37,13 +37,13 @@ interface ControlsPanelProps {
   onRemoveUserSticker: (src: string) => void;
 }
 
-const inputClass = 'w-full rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.06)] outline-none transition duration-200 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-200/60';
+const inputClass = 'w-full rounded-[28px] border border-slate-200/80 bg-white/95 px-5 py-4 text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_18px_40px_rgba(15,23,42,0.08)] outline-none transition duration-200 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-200/60';
 const selectClass = `${inputClass} appearance-none`;
 const cardClass = 'rounded-2xl border border-slate-200/70 bg-white/65 p-3 shadow-[0_8px_24px_rgba(15,23,42,0.05)]';
 const uploadClass = 'w-full block cursor-pointer rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 text-center text-sm font-medium text-slate-600 transition hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600';
 
-const Popover: React.FC<{ title: string; children: React.ReactNode; onClose: () => void }> = ({ title, children, onClose }) => (
-  <div className="absolute top-full left-1/2 z-20 mt-3 w-[calc(100vw-24px)] max-w-[390px] -translate-x-1/2 rounded-[24px] border border-white/70 bg-white/80 p-5 backdrop-blur-2xl shadow-[0_24px_80px_rgba(15,23,42,0.22)]" onClick={(e) => e.stopPropagation()}>
+const Popover: React.FC<{ title: string; children: React.ReactNode; onClose: () => void; className?: string }> = ({ title, children, onClose, className = '' }) => (
+  <div className={`absolute top-full left-1/2 z-20 mt-3 w-[calc(100vw-24px)] max-w-[390px] -translate-x-1/2 rounded-[24px] border border-white/70 bg-white/80 p-5 backdrop-blur-2xl shadow-[0_24px_80px_rgba(15,23,42,0.22)] sm:max-w-[430px] ${className}`} onClick={(e) => e.stopPropagation()}>
     <div className="flex justify-between items-center mb-4">
       <h3 className="text-lg font-semibold tracking-tight text-slate-800">{title}</h3>
       <button onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/80 text-slate-400 shadow-sm transition hover:bg-slate-900 hover:text-white" aria-label="Close panel">
@@ -135,11 +135,11 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
           </div>
 
           {activeMenu === 'text' && (
-            <Popover title="Text & AI" onClose={() => setActiveMenu(null)}>
+            <Popover title="Text & AI" onClose={() => setActiveMenu(null)} className="sm:max-w-[560px] lg:max-w-[720px] lg:p-6">
               <div className="space-y-4">
-                <div>
+                <div className="rounded-[30px] border border-white/70 bg-gradient-to-br from-white to-slate-50 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
                   <label className="mb-1.5 block text-sm font-medium text-slate-600">Ayah</label>
-                  <textarea className={`${inputClass} min-h-[92px] resize-y text-lg`} style={{ fontFamily: "'Amiri', serif", direction: 'rtl' }} value={props.ayah.text} onChange={(e) => props.setAyah((a) => ({ ...a, text: e.target.value, position: { ...a.position, x: -1 } }))} />
+                  <textarea className={`${inputClass} min-h-[120px] resize-y text-lg lg:min-h-[150px]`} style={{ fontFamily: "'Amiri', serif", direction: 'rtl' }} value={props.ayah.text} onChange={(e) => props.setAyah((a) => ({ ...a, text: e.target.value, position: { ...a.position, x: -1 } }))} />
                   <button onClick={props.onApplyKashida} disabled={props.isApplyingKashida || !props.ayah.text.trim()} className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_40px_rgba(79,70,229,0.35)] transition hover:-translate-y-0.5 hover:brightness-105 disabled:cursor-not-allowed disabled:from-slate-300 disabled:via-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:shadow-none">
                     {props.isApplyingKashida && <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" aria-hidden="true" />}
                     {props.isApplyingKashida ? 'Adding Kashida...' : 'Enhance with Kashida'}
@@ -148,9 +148,9 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                     {props.isApplyingKashida ? 'Applying fast local calligraphic stretch...' : 'Fast local Kashida adds calligraphic elongation without waiting for AI.'}
                   </p>
                 </div>
-                <div>
+                <div className="rounded-[30px] border border-white/70 bg-gradient-to-br from-white to-slate-50 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
                   <label className="mb-1.5 block text-sm font-medium text-slate-600">Translation</label>
-                  <textarea className={`${inputClass} min-h-[92px] resize-y`} value={props.translation.text} onChange={(e) => props.setTranslation((t) => ({ ...t, text: e.target.value, position: { ...t.position, x: -1 } }))} />
+                  <textarea className={`${inputClass} min-h-[120px] resize-y lg:min-h-[150px]`} value={props.translation.text} onChange={(e) => props.setTranslation((t) => ({ ...t, text: e.target.value, position: { ...t.position, x: -1 } }))} />
                   <button onClick={props.onHighlight} disabled={props.isHighlighting} className="mt-3 w-full rounded-2xl bg-amber-300 px-4 py-3 text-sm font-semibold text-amber-950 shadow-[0_14px_30px_rgba(251,191,36,0.25)] transition hover:-translate-y-0.5 hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none">
                     {props.isHighlighting ? 'Analyzing...' : 'Highlight Key Words'}
                   </button>
