@@ -569,11 +569,43 @@ const App: React.FC = () => {
     }
   }, [appState.translation.text, updateAppState]);
 
-  const handleApplyKashida = useCallback(() => {
+  const handleApplyKashida = useCallback(async () => {
     if (!appState.ayah.text) return;
 
     setIsApplyingKashida(true);
     try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `You are an expert Arabic calligrapher. Add EXACTLY ONE kashida character (ـ U+0640) at the best stretching point inside each long word of this Arabic Quranic text.
+
+STRICT RULES:
+- Use ONLY a single ـ per insertion, NEVER two or more consecutive ـ
+- Place ـ ONLY between two connected base letters (like بـتـسـشـصـضـطـعـغـفـقـكـلـمـنـهـي)
+- NEVER place ـ next to a non-connecting letter (ا أ إ آ د ذ ر ز و ؤ ء)
+- NEVER place ـ at the start or end of a word
+- NEVER remove, add, or reorder any diacritics/harakat (ً ٌ ٍ َ ُ ِ ّ ْ ٰ)
+- NEVER add any new characters except ـ
+- Skip short words (3 letters or fewer)
+- Return ONLY the modified text, no explanation
+
+Text: ${appState.ayah.text}`,
+        config: {
+          responseMimeType: 'text/plain',
+        },
+      });
+
+      let resultText = response.text?.trim();
+      if (resultText) {
+        // Collapse multiple consecutive tatweels into one
+        resultText = resultText.replace(/ـ{2,}/g, 'ـ');
+        if (resultText !== appState.ayah.text) {
+          setAyah((a) => ({ ...a, text: resultText, position: { ...a.position, x: -1 } }));
+        }
+      }
+    } catch (error) {
+      console.error('Error applying kashida:', error);
+      // Fallback to local algorithm
       const newText = applyFastKashida(appState.ayah.text);
       if (newText && newText !== appState.ayah.text) {
         setAyah((a) => ({ ...a, text: newText, position: { ...a.position, x: -1 } }));
