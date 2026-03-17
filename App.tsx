@@ -533,40 +533,12 @@ const App: React.FC = () => {
     });
   }, [updateAppState]);
 
-  const handleHighlightWords = useCallback(async () => {
+  const handleHighlightWords = useCallback(() => {
     if (!appState.translation.text) return;
 
     setIsHighlighting(true);
-    updateAppState((s) => ({ ...s, highlightedWords: [] }), { recordHistory: false });
 
-    try {
-      // Try Vercel API first (production)
-      const response = await fetch('/api/gemini', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'highlight',
-          text: appState.translation.text,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const words = data.result;
-
-      if (Array.isArray(words) && words.length > 0) {
-        updateAppState((s) => ({ ...s, highlightedWords: words.map(String) }));
-        setIsHighlighting(false);
-        return;
-      }
-    } catch (error) {
-      console.warn('Vercel API failed, using local fallback:', error);
-    }
-
-    // Local fallback for development
+    // Local highlight: pick longer words (4+ chars) as "key words"
     const stopWords = new Set(['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'has', 'her', 'was', 'one', 'our', 'out', 'his', 'had', 'who', 'will', 'from', 'they', 'been', 'have', 'with', 'this', 'that', 'into', 'them', 'than', 'its', 'over', 'also', 'upon', 'what', 'when', 'your', 'each', 'which', 'their', 'there', 'those', 'these', 'then', 'some', 'would', 'about', 'после', 'этот', 'быть', 'если', 'того', 'этих', 'тоже', 'свой', 'весь', 'через', 'более', 'между']);
     const words = appState.translation.text
       .replace(/[.,;:!?""'(){}\[\]<>\/\\—–-]/g, ' ')
@@ -580,41 +552,10 @@ const App: React.FC = () => {
     setIsHighlighting(false);
   }, [appState.translation.text, updateAppState]);
 
-  const handleApplyKashida = useCallback(async () => {
+  const handleApplyKashida = useCallback(() => {
     if (!appState.ayah.text) return;
 
     setIsApplyingKashida(true);
-    try {
-      // Try Vercel API first (production)
-      const response = await fetch('/api/gemini', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'kashida',
-          text: appState.ayah.text,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      let resultText = data.result;
-
-      if (resultText) {
-        resultText = resultText.replace(/ـ{2,}/g, 'ـ');
-        if (resultText !== appState.ayah.text) {
-          setAyah((a) => ({ ...a, text: resultText, position: { ...a.position, x: -1 } }));
-        }
-      }
-      setIsApplyingKashida(false);
-      return;
-    } catch (error) {
-      console.warn('Vercel API failed, using local fallback:', error);
-    }
-
-    // Local fallback for development
     const newText = applyFastKashida(appState.ayah.text);
     if (newText && newText !== appState.ayah.text) {
       setAyah((a) => ({ ...a, text: newText, position: { ...a.position, x: -1 } }));
