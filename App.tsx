@@ -568,15 +568,34 @@ const App: React.FC = () => {
     }
   }, [appState.translation.text, updateAppState]);
 
-  const handleApplyKashida = useCallback(() => {
+  const handleApplyKashida = useCallback(async () => {
     if (!appState.ayah.text) return;
 
     setIsApplyingKashida(true);
     try {
-      const newText = applyFastKashida(appState.ayah.text);
-      if (newText && newText !== appState.ayah.text) {
-        setAyah((a) => ({ ...a, text: newText, position: { ...a.position, x: -1 } }));
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `You are an expert Arabic calligrapher. Add kashida (tatweel ـ) characters to the following Arabic text to make it look beautifully stretched and justified, like professional Quranic calligraphy. Rules:
+- Insert the tatweel character (ـ U+0640) between connected letters where appropriate
+- Do NOT break any letter connections or diacritics (harakat)
+- Do NOT add dots or change any characters
+- Keep all original diacritics (tashkeel) exactly in place
+- Add 1-2 tatweels per word maximum, in natural calligraphic positions
+- Return ONLY the modified Arabic text, nothing else
+
+Text: ${appState.ayah.text}`,
+        config: {
+          responseMimeType: 'text/plain',
+        },
+      });
+
+      const resultText = response.text?.trim();
+      if (resultText && resultText !== appState.ayah.text) {
+        setAyah((a) => ({ ...a, text: resultText, position: { ...a.position, x: -1 } }));
       }
+    } catch (error) {
+      console.error('Error applying kashida:', error);
     } finally {
       setIsApplyingKashida(false);
     }
