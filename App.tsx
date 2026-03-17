@@ -297,6 +297,47 @@ const getFontFormat = (fileName: string, fileUrl?: string, explicitFormat?: stri
   return null;
 };
 
+const waitForAnimationFrames = async (count = 2): Promise<void> => {
+  for (let index = 0; index < count; index += 1) {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  }
+};
+
+const waitForImagesReady = async (root: HTMLElement): Promise<void> => {
+  const images = Array.from(root.querySelectorAll('img'));
+
+  await Promise.all(
+    images.map((image) => {
+      if (image.complete) {
+        return Promise.resolve();
+      }
+
+      return new Promise<void>((resolve) => {
+        const finish = () => resolve();
+        image.addEventListener('load', finish, { once: true });
+        image.addEventListener('error', finish, { once: true });
+      });
+    })
+  );
+};
+
+const resolveExportScale = (width: number, height: number, isCoarsePointerDevice: boolean): number => {
+  const safeWidth = Math.max(width, 1);
+  const safeHeight = Math.max(height, 1);
+  const longestEdge = Math.max(safeWidth, safeHeight);
+  const totalPixels = safeWidth * safeHeight;
+  const targetLongEdge = isCoarsePointerDevice ? 4200 : 5600;
+  const maxPixels = isCoarsePointerDevice ? 22_000_000 : 40_000_000;
+  const maxScale = isCoarsePointerDevice ? 5 : 5.5;
+  const minScale = isCoarsePointerDevice ? 2.4 : 2;
+
+  const targetScale = targetLongEdge / longestEdge;
+  const budgetScale = Math.sqrt(maxPixels / totalPixels);
+  const scale = Math.min(maxScale, targetScale, budgetScale);
+
+  return Number(Math.max(minScale, scale).toFixed(2));
+};
+
 const App: React.FC = () => {
   const [historyState, dispatchHistory] = useReducer(historyReducer, undefined, (): HistoryState => {
     const defaultState = getInitialDefaultState();
@@ -701,48 +742,58 @@ const App: React.FC = () => {
 
     const { width, height } = canvasElement.getBoundingClientRect();
     const isCoarsePointerDevice = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
-    const longestEdge = Math.max(width, height, 1);
-    const exportScale = isCoarsePointerDevice
-      ? Math.max(2.25, Math.min(3.25, 2600 / longestEdge))
-      : 5;
+    const exportScale = resolveExportScale(width, height, isCoarsePointerDevice);
 
-    setTimeout(() => {
-      // @ts-ignore
-      html2canvas(canvasElement, {
-        backgroundColor: appState.backgroundMode === BackgroundMode.TRANSPARENT ? null : appState.backgroundMode === BackgroundMode.GRADIENT ? '#667eea' : appState.bgColor,
-        scale: exportScale,
-        useCORS: true,
-        width,
-        height,
-        windowWidth: Math.ceil(width),
-        windowHeight: Math.ceil(height),
-        logging: false,
-      })
-        .then((canvas) => {
-          canvasElement.classList.remove('exporting');
-          canvasElement.classList.remove('exporting-transparent');
+    const exportImage = async () => {
+      try {
+        if (document.fonts?.ready) {
+          await document.fonts.ready;
+        }
 
-          if (format === 'jpeg') {
-            const jpegCanvas = document.createElement('canvas');
-            jpegCanvas.width = canvas.width;
-            jpegCanvas.height = canvas.height;
-            const ctx = jpegCanvas.getContext('2d');
-            if (ctx) {
-              ctx.fillStyle = appState.backgroundMode === BackgroundMode.GRADIENT ? '#667eea' : appState.bgColor;
-              ctx.fillRect(0, 0, jpegCanvas.width, jpegCanvas.height);
-              ctx.drawImage(canvas, 0, 0);
-              triggerCanvasDownload(jpegCanvas, 'jpeg', 'ayah.jpeg', 0.95);
-            }
-          } else {
-            triggerCanvasDownload(canvas, 'png', 'ayah.png');
-          }
-        })
-        .catch((err) => {
-          console.error('Failed to export image:', err);
-          canvasElement.classList.remove('exporting');
-          canvasElement.classList.remove('exporting-transparent');
+        await waitForImagesReady(canvasElement);
+        await waitForAnimationFrames(2);
+
+        // @ts-ignore
+        const canvas = await html2canvas(canvasElement, {
+          backgroundColor: appState.backgroundMode === BackgroundMode.TRANSPARENT ? null : appState.backgroundMode === BackgroundMode.GRADIENT ? '#667eea' : appState.bgColor,
+          scale: exportScale,
+          useCORS: true,
+          width: Math.ceil(width),
+          height: Math.ceil(height),
+          windowWidth: Math.ceil(width),
+          windowHeight: Math.ceil(height),
+          logging: false,
+          removeContainer: true,
         });
-    }, 100);
+
+        canvasElement.classList.remove('exporting');
+        canvasElement.classList.remove('exporting-transparent');
+
+        if (format === 'jpeg') {
+          const jpegCanvas = document.createElement('canvas');
+          jpegCanvas.width = canvas.width;
+          jpegCanvas.height = canvas.height;
+          const ctx = jpegCanvas.getContext('2d');
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.fillStyle = appState.backgroundMode === BackgroundMode.GRADIENT ? '#667eea' : appState.bgColor;
+            ctx.fillRect(0, 0, jpegCanvas.width, jpegCanvas.height);
+            ctx.drawImage(canvas, 0, 0);
+            triggerCanvasDownload(jpegCanvas, 'jpeg', 'ayah.jpeg', 0.98);
+          }
+          return;
+        }
+
+        triggerCanvasDownload(canvas, 'png', 'ayah.png');
+      } catch (err) {
+        console.error('Failed to export image:', err);
+        canvasElement.classList.remove('exporting');
+        canvasElement.classList.remove('exporting-transparent');
+      }
+    };
+
+    void exportImage();
   }, [appState.backgroundMode, appState.bgColor, triggerCanvasDownload]);
 
   const customFontOptions = useMemo(() => appState.customFonts.map((f) => ({ value: f.familyName, label: f.name })), [appState.customFonts]);
@@ -823,6 +874,7 @@ const App: React.FC = () => {
         }
         #canvas.exporting.exporting-transparent .canvas-text-ayah {
           color: rgba(255,255,255,0.98) !important;
+          -webkit-text-stroke: 0.65px rgba(0,0,0,0.5);
           text-shadow:
             0 1px 1px rgba(0,0,0,0.88),
             0 0 2px rgba(0,0,0,0.72),
@@ -831,6 +883,7 @@ const App: React.FC = () => {
         }
         #canvas.exporting.exporting-transparent .canvas-text-translation {
           color: rgba(255,255,255,0.92) !important;
+          -webkit-text-stroke: 0.55px rgba(0,0,0,0.44);
           text-shadow:
             0 1px 1px rgba(0,0,0,0.84),
             0 0 2px rgba(0,0,0,0.68),
@@ -839,6 +892,7 @@ const App: React.FC = () => {
         }
         #canvas.exporting.exporting-transparent .canvas-text-translation .highlight {
           color: rgba(255,255,255,0.96) !important;
+          -webkit-text-stroke: 0.7px rgba(0,0,0,0.52);
           text-shadow:
             0 1px 1px rgba(0,0,0,0.9),
             0 0 2px rgba(0,0,0,0.76),
