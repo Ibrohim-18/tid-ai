@@ -576,13 +576,17 @@ const App: React.FC = () => {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `You are an expert Arabic calligrapher. Add kashida (tatweel ـ) characters to the following Arabic text to make it look beautifully stretched and justified, like professional Quranic calligraphy. Rules:
-- Insert the tatweel character (ـ U+0640) between connected letters where appropriate
-- Do NOT break any letter connections or diacritics (harakat)
-- Do NOT add dots or change any characters
-- Keep all original diacritics (tashkeel) exactly in place
-- Add 1-2 tatweels per word maximum, in natural calligraphic positions
-- Return ONLY the modified Arabic text, nothing else
+        contents: `You are an expert Arabic calligrapher. Add EXACTLY ONE kashida character (ـ U+0640) at the best stretching point inside each long word of this Arabic Quranic text.
+
+STRICT RULES:
+- Use ONLY a single ـ per insertion, NEVER two or more consecutive ـ
+- Place ـ ONLY between two connected base letters (like بـبـتـسـشـصـضـطـعـغـفـقـكـلـمـنـهـي)
+- NEVER place ـ next to a non-connecting letter (ا أ إ آ د ذ ر ز و ؤ ء)
+- NEVER place ـ at the start or end of a word
+- NEVER remove, add, or reorder any diacritics/harakat (ً ٌ ٍ َ ُ ِ ّ ْ ٰ)
+- NEVER add any new characters except ـ
+- Skip short words (3 letters or fewer)
+- Return ONLY the modified text, no explanation
 
 Text: ${appState.ayah.text}`,
         config: {
@@ -590,9 +594,13 @@ Text: ${appState.ayah.text}`,
         },
       });
 
-      const resultText = response.text?.trim();
-      if (resultText && resultText !== appState.ayah.text) {
-        setAyah((a) => ({ ...a, text: resultText, position: { ...a.position, x: -1 } }));
+      let resultText = response.text?.trim();
+      if (resultText) {
+        // Collapse multiple consecutive tatweels into one
+        resultText = resultText.replace(/ـ{2,}/g, 'ـ');
+        if (resultText !== appState.ayah.text) {
+          setAyah((a) => ({ ...a, text: resultText, position: { ...a.position, x: -1 } }));
+        }
       }
     } catch (error) {
       console.error('Error applying kashida:', error);
