@@ -467,6 +467,7 @@ const CanvasArea = forwardRef<HTMLDivElement, CanvasAreaProps>((props, ref) => {
         canvasRef={ref as React.RefObject<HTMLDivElement>}
         isDraggingClass="opacity-50 scale-105"
         setDraggingElement={setDraggingElement}
+        highlightedWords={highlightedWords}
       />
       <DraggableText
         id="translation"
