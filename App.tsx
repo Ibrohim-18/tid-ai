@@ -540,61 +540,70 @@ const App: React.FC = () => {
     setIsHighlighting(true);
     updateAppState((s) => ({ ...s, highlightedWords: [] }), { recordHistory: false });
 
-    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-
-    if (apiKey && apiKey !== 'PLACEHOLDER_API_KEY') {
-      try {
-        const ai = new GoogleGenAI({ apiKey });
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: `Identify the most theologically significant words in this religious verse translation. Return a JSON array containing these words as strings. The text is: "${appState.translation.text}"`,
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.STRING,
-                description: 'A theologically significant word from the text.',
-              },
+    try {
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: `Identify the most theologically significant words in this religious verse translation. Return a JSON array containing these words as strings. The text is: "${appState.translation.text}"`,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.STRING,
+              description: 'A theologically significant word from the text.',
             },
           },
-        });
+        },
+      });
 
-        const resultText = response.text.trim();
-        const words = JSON.parse(resultText);
-        if (Array.isArray(words) && words.length > 0) {
-          updateAppState((s) => ({ ...s, highlightedWords: words.map(String) }));
-          setIsHighlighting(false);
-          return;
-        }
-      } catch (error) {
-        console.error('AI highlight failed, using local fallback:', error);
+      const resultText = response.text.trim();
+      const words = JSON.parse(resultText);
+      if (Array.isArray(words) && words.length > 0) {
+        updateAppState((s) => ({ ...s, highlightedWords: words.map(String) }));
       }
+    } catch (error) {
+      console.error('Error highlighting words:', error);
+    } finally {
+      setIsHighlighting(false);
     }
-
-    // Local fallback: pick longer words (4+ chars) as "key words"
-    const stopWords = new Set(['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'has', 'her', 'was', 'one', 'our', 'out', 'his', 'had', 'who', 'will', 'from', 'they', 'been', 'have', 'with', 'this', 'that', 'into', 'them', 'than', 'its', 'over', 'also', 'upon', 'what', 'when', 'your', 'each', 'which', 'their', 'there', 'those', 'these', 'then', 'some', 'would', 'about', 'после', 'этот', 'быть', 'если', 'того', 'этих', 'тоже', 'свой', 'весь', 'через', 'более', 'между']);
-    const words = appState.translation.text
-      .replace(/[.,;:!?"""''()\[\]{}<>\/\\—–-]/g, ' ')
-      .split(/\s+/)
-      .filter((w) => w.length >= 4 && !stopWords.has(w.toLowerCase()));
-    const unique = [...new Set(words)];
-    const picked = unique.slice(0, Math.max(2, Math.ceil(unique.length * 0.35)));
-    if (picked.length > 0) {
-      updateAppState((s) => ({ ...s, highlightedWords: picked }));
-    }
-    setIsHighlighting(false);
   }, [appState.translation.text, updateAppState]);
 
-  const handleApplyKashida = useCallback(() => {
+  const handleApplyKashida = useCallback(async () => {
     if (!appState.ayah.text) return;
 
     setIsApplyingKashida(true);
     try {
-      const newText = applyFastKashida(appState.ayah.text);
-      if (newText && newText !== appState.ayah.text) {
-        setAyah((a) => ({ ...a, text: newText, position: { ...a.position, x: -1 } }));
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: `You are an expert Arabic calligrapher. Add EXACTLY ONE kashida character (ـ U+0640) at the best stretching point inside each long word of this Arabic Quranic text.
+
+STRICT RULES:
+- Use ONLY a single ـ per insertion, NEVER two or more consecutive ـ
+- Place ـ ONLY between two connected base letters (like بـتـسـشـصـضـطـعـغـفـقـكـلـمـنـهـي)
+- NEVER place ـ next to a non-connecting letter (ا أ إ آ د ذ ر ز و ؤ ء)
+- NEVER place ـ at the start or end of a word
+- NEVER remove, add, or reorder any diacritics/harakat (ً ٌ ٍ َ ُ ِ ّ ْ ٰ)
+- NEVER add any new characters except ـ
+- Skip short words (3 letters or fewer)
+- Return ONLY the modified text, no explanation
+
+Text: ${appState.ayah.text}`,
+        config: {
+          responseMimeType: 'text/plain',
+        },
+      });
+
+      let resultText = response.text?.trim();
+      if (resultText) {
+        resultText = resultText.replace(/ـ{2,}/g, 'ـ');
+        if (resultText !== appState.ayah.text) {
+          setAyah((a) => ({ ...a, text: resultText, position: { ...a.position, x: -1 } }));
+        }
       }
+    } catch (error) {
+      console.error('Error applying kashida:', error);
     } finally {
       setIsApplyingKashida(false);
     }
