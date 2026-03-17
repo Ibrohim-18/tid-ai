@@ -326,16 +326,19 @@ const resolveExportScale = (width: number, height: number, isCoarsePointerDevice
   const safeHeight = Math.max(height, 1);
   const longestEdge = Math.max(safeWidth, safeHeight);
   const totalPixels = safeWidth * safeHeight;
-  const targetLongEdge = isCoarsePointerDevice ? 4200 : 5600;
-  const maxPixels = isCoarsePointerDevice ? 22_000_000 : 40_000_000;
-  const maxScale = isCoarsePointerDevice ? 5 : 5.5;
-  const minScale = isCoarsePointerDevice ? 2.4 : 2;
+  const devicePixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+  const targetLongEdge = isCoarsePointerDevice ? 2800 : 3600;
+  const maxPixels = isCoarsePointerDevice ? 9_500_000 : 16_000_000;
+  const maxScale = isCoarsePointerDevice ? 2.4 : 3;
+  const deviceAwareScale = isCoarsePointerDevice
+    ? Math.min(Math.max(devicePixelRatio * 0.95, 1.4), maxScale)
+    : Math.min(Math.max(devicePixelRatio * 1.15, 1.6), maxScale);
 
   const targetScale = targetLongEdge / longestEdge;
   const budgetScale = Math.sqrt(maxPixels / totalPixels);
-  const scale = Math.min(maxScale, targetScale, budgetScale);
+  const scale = Math.min(maxScale, deviceAwareScale, targetScale, budgetScale);
 
-  return Number(Math.max(minScale, scale).toFixed(2));
+  return Number(Math.max(1, scale).toFixed(2));
 };
 
 const App: React.FC = () => {
@@ -370,6 +373,7 @@ const App: React.FC = () => {
   const appState = historyState.present;
   const [isHighlighting, setIsHighlighting] = useState(false);
   const [isApplyingKashida, setIsApplyingKashida] = useState(false);
+  const [isExportingImage, setIsExportingImage] = useState(false);
   const [draggingElement, setDraggingElement] = useState<string | null>(null);
   const [activeElementId, setActiveElementId] = useState<string | null>(null);
 
@@ -703,21 +707,30 @@ const App: React.FC = () => {
   const triggerCanvasDownload = useCallback((canvas: HTMLCanvasElement, format: 'png' | 'jpeg', fileName: string, quality?: number) => {
     const link = document.createElement('a');
     link.download = fileName;
+    link.rel = 'noopener';
 
     const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
     const fallbackHref = () => canvas.toDataURL(mimeType, quality);
+    const shouldPreferDataUrl = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
 
-    if (canvas.toBlob) {
+    document.body.appendChild(link);
+
+    const clickAndCleanup = () => {
+      link.click();
+      window.setTimeout(() => link.remove(), 0);
+    };
+
+    if (canvas.toBlob && !shouldPreferDataUrl) {
       canvas.toBlob((blob) => {
         if (!blob) {
           link.href = fallbackHref();
-          link.click();
+          clickAndCleanup();
           return;
         }
 
         const objectUrl = URL.createObjectURL(blob);
         link.href = objectUrl;
-        link.click();
+        clickAndCleanup();
         window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
       }, mimeType, quality);
 
@@ -725,13 +738,14 @@ const App: React.FC = () => {
     }
 
     link.href = fallbackHref();
-    link.click();
+    clickAndCleanup();
   }, []);
 
   const handleDownloadImage = useCallback((format: 'png' | 'jpeg') => {
     const canvasElement = canvasRef.current;
-    if (!canvasElement) return;
+    if (!canvasElement || isExportingImage) return;
 
+    setIsExportingImage(true);
     setActiveElementId(null);
     canvasElement.classList.add('exporting');
 
@@ -751,7 +765,7 @@ const App: React.FC = () => {
         }
 
         await waitForImagesReady(canvasElement);
-        await waitForAnimationFrames(2);
+        await waitForAnimationFrames(1);
 
         // @ts-ignore
         const canvas = await html2canvas(canvasElement, {
@@ -765,9 +779,6 @@ const App: React.FC = () => {
           logging: false,
           removeContainer: true,
         });
-
-        canvasElement.classList.remove('exporting');
-        canvasElement.classList.remove('exporting-transparent');
 
         if (format === 'jpeg') {
           const jpegCanvas = document.createElement('canvas');
@@ -788,13 +799,15 @@ const App: React.FC = () => {
         triggerCanvasDownload(canvas, 'png', 'ayah.png');
       } catch (err) {
         console.error('Failed to export image:', err);
+      } finally {
         canvasElement.classList.remove('exporting');
         canvasElement.classList.remove('exporting-transparent');
+        setIsExportingImage(false);
       }
     };
 
     void exportImage();
-  }, [appState.backgroundMode, appState.bgColor, triggerCanvasDownload]);
+  }, [appState.backgroundMode, appState.bgColor, isExportingImage, triggerCanvasDownload]);
 
   const customFontOptions = useMemo(() => appState.customFonts.map((f) => ({ value: f.familyName, label: f.name })), [appState.customFonts]);
   const combinedArabicFonts = useMemo(() => [...ARABIC_FONTS, { value: 'separator', label: '--- Custom Fonts ---', disabled: true }, ...customFontOptions], [customFontOptions]);
@@ -852,6 +865,7 @@ const App: React.FC = () => {
         onRemoveUserSticker={handleRemoveUserSticker}
         canUndo={canUndo}
         canRedo={canRedo}
+        isDownloading={isExportingImage}
         onUndo={handleUndo}
         onRedo={handleRedo}
       />
