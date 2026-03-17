@@ -326,19 +326,16 @@ const resolveExportScale = (width: number, height: number, isCoarsePointerDevice
   const safeHeight = Math.max(height, 1);
   const longestEdge = Math.max(safeWidth, safeHeight);
   const totalPixels = safeWidth * safeHeight;
-  const devicePixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-  const targetLongEdge = isCoarsePointerDevice ? 2800 : 3600;
-  const maxPixels = isCoarsePointerDevice ? 9_500_000 : 16_000_000;
-  const maxScale = isCoarsePointerDevice ? 2.4 : 3;
-  const deviceAwareScale = isCoarsePointerDevice
-    ? Math.min(Math.max(devicePixelRatio * 0.95, 1.4), maxScale)
-    : Math.min(Math.max(devicePixelRatio * 1.15, 1.6), maxScale);
+  const targetLongEdge = isCoarsePointerDevice ? 4200 : 5600;
+  const maxPixels = isCoarsePointerDevice ? 28_000_000 : 50_000_000;
+  const maxScale = isCoarsePointerDevice ? 5 : 6;
+  const minScale = isCoarsePointerDevice ? 3 : 3.5;
 
   const targetScale = targetLongEdge / longestEdge;
   const budgetScale = Math.sqrt(maxPixels / totalPixels);
-  const scale = Math.min(maxScale, deviceAwareScale, targetScale, budgetScale);
+  const scale = Math.min(maxScale, targetScale, budgetScale);
 
-  return Number(Math.max(1, scale).toFixed(2));
+  return Number(Math.max(minScale, scale).toFixed(2));
 };
 
 const App: React.FC = () => {
@@ -788,10 +785,15 @@ const App: React.FC = () => {
           if (ctx) {
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
-            ctx.fillStyle = appState.backgroundMode === BackgroundMode.GRADIENT ? '#667eea' : appState.bgColor;
+            const jpegBg = appState.backgroundMode === BackgroundMode.TRANSPARENT
+              ? '#000000'
+              : appState.backgroundMode === BackgroundMode.GRADIENT
+                ? '#667eea'
+                : appState.bgColor;
+            ctx.fillStyle = jpegBg;
             ctx.fillRect(0, 0, jpegCanvas.width, jpegCanvas.height);
             ctx.drawImage(canvas, 0, 0);
-            triggerCanvasDownload(jpegCanvas, 'jpeg', 'ayah.jpeg', 0.98);
+            triggerCanvasDownload(jpegCanvas, 'jpeg', 'ayah.jpeg', 1.0);
           }
           return;
         }
