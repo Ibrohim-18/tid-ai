@@ -248,8 +248,9 @@ const addFastKashidaToWord = (word: string): string => {
     return word;
   }
 
-  const maxPerCandidate = 1;
-  const targetTatweels = Math.min(existingTatweels + 1, candidates.length * maxPerCandidate);
+  const maxPerCandidate = 3;
+  const stepSize = glyphs.length >= 8 ? 2 : 1;
+  const targetTatweels = Math.min(existingTatweels + stepSize, candidates.length * maxPerCandidate);
   const tatweelPlan = buildTatweelPlan(getPreferredKashidaOrder(candidates, glyphs.length), targetTatweels);
   const stretchedGlyphs: string[] = [];
 
@@ -785,11 +786,9 @@ const App: React.FC = () => {
           if (ctx) {
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
-            const jpegBg = appState.backgroundMode === BackgroundMode.TRANSPARENT
-              ? '#000000'
-              : appState.backgroundMode === BackgroundMode.GRADIENT
-                ? '#667eea'
-                : appState.bgColor;
+            const jpegBg = appState.backgroundMode === BackgroundMode.GRADIENT
+              ? '#667eea'
+              : appState.bgColor;
             ctx.fillStyle = jpegBg;
             ctx.fillRect(0, 0, jpegCanvas.width, jpegCanvas.height);
             ctx.drawImage(canvas, 0, 0);
