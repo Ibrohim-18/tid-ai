@@ -568,42 +568,15 @@ const App: React.FC = () => {
     }
   }, [appState.translation.text, updateAppState]);
 
-  const handleApplyKashida = useCallback(async () => {
+  const handleApplyKashida = useCallback(() => {
     if (!appState.ayah.text) return;
 
     setIsApplyingKashida(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `You are an expert Arabic calligrapher. Add EXACTLY ONE kashida character (ـ U+0640) at the best stretching point inside each long word of this Arabic Quranic text.
-
-STRICT RULES:
-- Use ONLY a single ـ per insertion, NEVER two or more consecutive ـ
-- Place ـ ONLY between two connected base letters (like بـبـتـسـشـصـضـطـعـغـفـقـكـلـمـنـهـي)
-- NEVER place ـ next to a non-connecting letter (ا أ إ آ د ذ ر ز و ؤ ء)
-- NEVER place ـ at the start or end of a word
-- NEVER remove, add, or reorder any diacritics/harakat (ً ٌ ٍ َ ُ ِ ّ ْ ٰ)
-- NEVER add any new characters except ـ
-- Skip short words (3 letters or fewer)
-- Return ONLY the modified text, no explanation
-
-Text: ${appState.ayah.text}`,
-        config: {
-          responseMimeType: 'text/plain',
-        },
-      });
-
-      let resultText = response.text?.trim();
-      if (resultText) {
-        // Collapse multiple consecutive tatweels into one
-        resultText = resultText.replace(/ـ{2,}/g, 'ـ');
-        if (resultText !== appState.ayah.text) {
-          setAyah((a) => ({ ...a, text: resultText, position: { ...a.position, x: -1 } }));
-        }
+      const newText = applyFastKashida(appState.ayah.text);
+      if (newText && newText !== appState.ayah.text) {
+        setAyah((a) => ({ ...a, text: newText, position: { ...a.position, x: -1 } }));
       }
-    } catch (error) {
-      console.error('Error applying kashida:', error);
     } finally {
       setIsApplyingKashida(false);
     }
@@ -917,30 +890,27 @@ Text: ${appState.ayah.text}`,
         }
         #canvas.exporting.exporting-transparent .canvas-text-ayah {
           color: rgba(255,255,255,0.98) !important;
-          -webkit-text-stroke: 0.65px rgba(0,0,0,0.5);
           text-shadow:
-            0 1px 1px rgba(0,0,0,0.88),
-            0 0 2px rgba(0,0,0,0.72),
-            0 2px 12px rgba(0,0,0,0.28),
-            0 1px 10px rgba(255,255,255,0.06);
+            0 1px 2px rgba(0,0,0,0.9),
+            0 0 4px rgba(0,0,0,0.7),
+            0 0 8px rgba(0,0,0,0.4),
+            0 2px 12px rgba(0,0,0,0.3);
         }
         #canvas.exporting.exporting-transparent .canvas-text-translation {
           color: rgba(255,255,255,0.92) !important;
-          -webkit-text-stroke: 0.55px rgba(0,0,0,0.44);
           text-shadow:
-            0 1px 1px rgba(0,0,0,0.84),
-            0 0 2px rgba(0,0,0,0.68),
-            0 2px 10px rgba(0,0,0,0.24),
-            0 1px 10px rgba(255,255,255,0.08);
+            0 1px 2px rgba(0,0,0,0.85),
+            0 0 4px rgba(0,0,0,0.65),
+            0 0 8px rgba(0,0,0,0.35),
+            0 2px 10px rgba(0,0,0,0.25);
         }
         #canvas.exporting.exporting-transparent .canvas-text-translation .highlight {
           color: rgba(255,255,255,0.96) !important;
-          -webkit-text-stroke: 0.7px rgba(0,0,0,0.52);
           text-shadow:
-            0 1px 1px rgba(0,0,0,0.9),
-            0 0 2px rgba(0,0,0,0.76),
-            0 2px 12px rgba(0,0,0,0.3),
-            0 1px 10px rgba(255,255,255,0.08);
+            0 1px 2px rgba(0,0,0,0.92),
+            0 0 4px rgba(0,0,0,0.75),
+            0 0 8px rgba(0,0,0,0.45),
+            0 2px 12px rgba(0,0,0,0.3);
         }
         #canvas.exporting .draggable-text-wrapper { transform: none !important; }
         #canvas.exporting .sticker-control, #canvas.exporting .sticker-border { display: none !important; }
