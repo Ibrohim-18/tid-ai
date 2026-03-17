@@ -540,33 +540,50 @@ const App: React.FC = () => {
     setIsHighlighting(true);
     updateAppState((s) => ({ ...s, highlightedWords: [] }), { recordHistory: false });
 
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Identify the most theologically significant words in this religious verse translation. Return a JSON array containing these words as strings. The text is: "${appState.translation.text}"`,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.STRING,
-              description: 'A theologically significant word from the text.',
+    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+
+    if (apiKey && apiKey !== 'PLACEHOLDER_API_KEY') {
+      try {
+        const ai = new GoogleGenAI({ apiKey });
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: `Identify the most theologically significant words in this religious verse translation. Return a JSON array containing these words as strings. The text is: "${appState.translation.text}"`,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.STRING,
+                description: 'A theologically significant word from the text.',
+              },
             },
           },
-        },
-      });
+        });
 
-      const resultText = response.text.trim();
-      const words = JSON.parse(resultText);
-      if (Array.isArray(words)) {
-        updateAppState((s) => ({ ...s, highlightedWords: words.map(String) }));
+        const resultText = response.text.trim();
+        const words = JSON.parse(resultText);
+        if (Array.isArray(words) && words.length > 0) {
+          updateAppState((s) => ({ ...s, highlightedWords: words.map(String) }));
+          setIsHighlighting(false);
+          return;
+        }
+      } catch (error) {
+        console.error('AI highlight failed, using local fallback:', error);
       }
-    } catch (error) {
-      console.error('Error highlighting words:', error);
-    } finally {
-      setIsHighlighting(false);
     }
+
+    // Local fallback: pick longer words (4+ chars) as "key words"
+    const stopWords = new Set(['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'has', 'her', 'was', 'one', 'our', 'out', 'his', 'had', 'who', 'will', 'from', 'they', 'been', 'have', 'with', 'this', 'that', 'into', 'them', 'than', 'its', 'over', 'also', 'upon', 'what', 'when', 'your', 'each', 'which', 'their', 'there', 'those', 'these', 'then', 'some', 'would', 'about', 'после', 'этот', 'быть', 'если', 'того', 'этих', 'тоже', 'свой', 'весь', 'через', 'более', 'между']);
+    const words = appState.translation.text
+      .replace(/[.,;:!?"""''()\[\]{}<>\/\\—–-]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length >= 4 && !stopWords.has(w.toLowerCase()));
+    const unique = [...new Set(words)];
+    const picked = unique.slice(0, Math.max(2, Math.ceil(unique.length * 0.35)));
+    if (picked.length > 0) {
+      updateAppState((s) => ({ ...s, highlightedWords: picked }));
+    }
+    setIsHighlighting(false);
   }, [appState.translation.text, updateAppState]);
 
   const handleApplyKashida = useCallback(() => {
