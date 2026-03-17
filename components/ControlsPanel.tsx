@@ -31,7 +31,8 @@ interface ControlsPanelProps {
   onRemoveCustomFont: (familyName: string) => void;
   arabicFonts: FontOption[];
   translationFonts: FontOption[];
-  onDownload: (format: 'png' | 'jpeg') => void;
+  onDownload: () => void;
+  isDownloading: boolean;
   onHighlight: () => void;
   isHighlighting: boolean;
   highlightedWords: string[];
@@ -282,16 +283,10 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
               <button onClick={() => props.onLanguageChange(Language.EN)} className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${props.language === Language.EN ? 'bg-white text-slate-900 shadow' : 'text-white/75 hover:bg-white/10 hover:text-white'}`}>EN</button>
             </div>
 
-            <div className="flex gap-1.5">
-              <RainbowButton onClick={() => props.onDownload('png')} className="h-11 px-4 text-sm">
-                <Download className="h-4 w-4" />
-                PNG
-              </RainbowButton>
-              <button onClick={() => props.onDownload('jpeg')} className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/10 bg-white/6 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(0,0,0,0.22)] transition hover:-translate-y-0.5 hover:bg-white/10">
-                <Download className="h-4 w-4" />
-                JPEG
-              </button>
-            </div>
+            <RainbowButton onClick={() => props.onDownload()} disabled={props.isDownloading} className="h-11 px-4 text-sm">
+              <Download className="h-4 w-4" />
+              {props.isDownloading ? 'Exporting...' : 'Download'}
+            </RainbowButton>
           </div>
 
           {activeMenu === 'text' && (

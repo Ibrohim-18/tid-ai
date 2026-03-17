@@ -702,13 +702,13 @@ const App: React.FC = () => {
     dispatchHistory({ type: 'REDO' });
   }, []);
 
-  const triggerCanvasDownload = useCallback((canvas: HTMLCanvasElement, format: 'png' | 'jpeg', fileName: string, quality?: number) => {
+  const triggerCanvasDownload = useCallback((canvas: HTMLCanvasElement, fileName: string) => {
     const link = document.createElement('a');
     link.download = fileName;
     link.rel = 'noopener';
 
-    const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
-    const fallbackHref = () => canvas.toDataURL(mimeType, quality);
+    const mimeType = 'image/png';
+    const fallbackHref = () => canvas.toDataURL(mimeType);
     const shouldPreferDataUrl = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
 
     document.body.appendChild(link);
@@ -730,7 +730,7 @@ const App: React.FC = () => {
         link.href = objectUrl;
         clickAndCleanup();
         window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
-      }, mimeType, quality);
+      }, mimeType);
 
       return;
     }
@@ -739,7 +739,7 @@ const App: React.FC = () => {
     clickAndCleanup();
   }, []);
 
-  const handleDownloadImage = useCallback((format: 'png' | 'jpeg') => {
+  const handleDownloadImage = useCallback(() => {
     const canvasElement = canvasRef.current;
     if (!canvasElement || isExportingImage) return;
 
@@ -778,26 +778,7 @@ const App: React.FC = () => {
           removeContainer: true,
         });
 
-        if (format === 'jpeg') {
-          const jpegCanvas = document.createElement('canvas');
-          jpegCanvas.width = canvas.width;
-          jpegCanvas.height = canvas.height;
-          const ctx = jpegCanvas.getContext('2d');
-          if (ctx) {
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            const jpegBg = appState.backgroundMode === BackgroundMode.GRADIENT
-              ? '#667eea'
-              : appState.bgColor;
-            ctx.fillStyle = jpegBg;
-            ctx.fillRect(0, 0, jpegCanvas.width, jpegCanvas.height);
-            ctx.drawImage(canvas, 0, 0);
-            triggerCanvasDownload(jpegCanvas, 'jpeg', 'ayah.jpeg', 1.0);
-          }
-          return;
-        }
-
-        triggerCanvasDownload(canvas, 'png', 'ayah.png');
+        triggerCanvasDownload(canvas, 'ayah.png');
       } catch (err) {
         console.error('Failed to export image:', err);
       } finally {
