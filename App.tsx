@@ -248,8 +248,8 @@ const addFastKashidaToWord = (word: string): string => {
     return word;
   }
 
-  const stepSize = glyphs.length >= 8 ? 2 : 1;
-  const targetTatweels = Math.min(existingTatweels + stepSize, candidates.length * 3);
+  const maxPerCandidate = 1;
+  const targetTatweels = Math.min(existingTatweels + 1, candidates.length * maxPerCandidate);
   const tatweelPlan = buildTatweelPlan(getPreferredKashidaOrder(candidates, glyphs.length), targetTatweels);
   const stretchedGlyphs: string[] = [];
 
