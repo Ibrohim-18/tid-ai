@@ -1,5 +1,4 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo, useReducer } from 'react';
-import { GoogleGenAI, Type } from '@google/genai';
 import type { TextElement, CustomFont, StickerElement } from './types';
 import { Language, BackgroundMode } from './types';
 import ControlsPanel from './components/ControlsPanel';
@@ -541,24 +540,22 @@ const App: React.FC = () => {
     updateAppState((s) => ({ ...s, highlightedWords: [] }), { recordHistory: false });
 
     try {
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: `Identify the most theologically significant words in this religious verse translation. Return a JSON array containing these words as strings. The text is: "${appState.translation.text}"`,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.STRING,
-              description: 'A theologically significant word from the text.',
-            },
-          },
-        },
+      const response = await fetch('/api/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'highlight',
+          text: appState.translation.text,
+        }),
       });
 
-      const resultText = response.text.trim();
-      const words = JSON.parse(resultText);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const words = data.result;
+
       if (Array.isArray(words) && words.length > 0) {
         updateAppState((s) => ({ ...s, highlightedWords: words.map(String) }));
       }
@@ -574,28 +571,22 @@ const App: React.FC = () => {
 
     setIsApplyingKashida(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: `You are an expert Arabic calligrapher. Add EXACTLY ONE kashida character (ـ U+0640) at the best stretching point inside each long word of this Arabic Quranic text.
-
-STRICT RULES:
-- Use ONLY a single ـ per insertion, NEVER two or more consecutive ـ
-- Place ـ ONLY between two connected base letters (like بـتـسـشـصـضـطـعـغـفـقـكـلـمـنـهـي)
-- NEVER place ـ next to a non-connecting letter (ا أ إ آ د ذ ر ز و ؤ ء)
-- NEVER place ـ at the start or end of a word
-- NEVER remove, add, or reorder any diacritics/harakat (ً ٌ ٍ َ ُ ِ ّ ْ ٰ)
-- NEVER add any new characters except ـ
-- Skip short words (3 letters or fewer)
-- Return ONLY the modified text, no explanation
-
-Text: ${appState.ayah.text}`,
-        config: {
-          responseMimeType: 'text/plain',
-        },
+      const response = await fetch('/api/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'kashida',
+          text: appState.ayah.text,
+        }),
       });
 
-      let resultText = response.text?.trim();
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      let resultText = data.result;
+
       if (resultText) {
         resultText = resultText.replace(/ـ{2,}/g, 'ـ');
         if (resultText !== appState.ayah.text) {
