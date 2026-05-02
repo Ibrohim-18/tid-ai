@@ -16,6 +16,11 @@ export interface StickerElement {
   zIndex: number;
 }
 
+export interface ScreenPart {
+  ayah: string;
+  translation: string;
+}
+
 export enum Language {
   RU = 'ru',
   EN = 'en',

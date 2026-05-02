@@ -1,8 +1,9 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo, useReducer } from 'react';
-import type { TextElement, CustomFont, StickerElement } from './types';
+import type { TextElement, CustomFont, StickerElement, ScreenPart } from './types';
 import { Language, BackgroundMode } from './types';
 import ControlsPanel from './components/ControlsPanel';
 import CanvasArea from './components/CanvasArea';
+import ScreenFrame from './components/ScreenFrame';
 import { ARABIC_FONTS, TRANSLATION_FONTS } from './constants';
 
 interface AppState {
@@ -16,6 +17,8 @@ interface AppState {
   highlightedWords: string[];
   stickers: StickerElement[];
   userStickers: string[];
+  ayahNumber: string;
+  screenParts: ScreenPart[];
 }
 
 interface HistoryState {
@@ -37,6 +40,9 @@ type UpdateOptions = {
 type TextElementSetter = (updater: React.SetStateAction<TextElement>, options?: UpdateOptions) => void;
 
 const HISTORY_LIMIT = 40;
+const MAX_SCREEN_PARTS = 5;
+const SCREEN_EXPORT_WIDTH = 1080;
+const SCREEN_EXPORT_HEIGHT = 1920;
 
 const ARABIC_DIACRITICS_REGEX = /[\u064B-\u065F\u0670\u06D6-\u06ED]/;
 const ARABIC_BASE_LETTER_REGEX = /[\u0621-\u064A]/;
@@ -168,6 +174,8 @@ const getInitialDefaultState = (): AppState => {
     highlightedWords: [],
     stickers: [],
     userStickers: [],
+    ayahNumber: '',
+    screenParts: [],
   };
 };
 
@@ -321,6 +329,107 @@ const waitForImagesReady = async (root: HTMLElement): Promise<void> => {
   );
 };
 
+const normalizeScreenParts = (screenParts: unknown): ScreenPart[] => {
+  if (!Array.isArray(screenParts)) {
+    return [];
+  }
+
+  return screenParts
+    .slice(0, MAX_SCREEN_PARTS)
+    .map((part) => ({
+      ayah: typeof part?.ayah === 'string' ? part.ayah : '',
+      translation: typeof part?.translation === 'string' ? part.translation : '',
+    }))
+    .filter((part) => part.ayah.trim() || part.translation.trim());
+};
+
+const normalizeAppState = (defaultState: AppState, parsed: Partial<AppState>): AppState => ({
+  ...defaultState,
+  ...parsed,
+  ayahNumber: typeof parsed.ayahNumber === 'string' ? parsed.ayahNumber : '',
+  screenParts: normalizeScreenParts(parsed.screenParts),
+});
+
+const splitIntoWords = (text: string): string[] => text.trim().split(/\s+/).filter(Boolean);
+
+const countWords = (text: string): number => splitIntoWords(text).length;
+
+const estimateScreenPartCount = (ayahText: string, translationText: string): number => {
+  const ayahWords = countWords(ayahText);
+  const translationWords = countWords(translationText);
+  const nonEmptyWordCounts = [ayahWords, translationWords].filter((count) => count > 0);
+  const maxNonEmptyParts = nonEmptyWordCounts.length > 0 ? Math.min(...nonEmptyWordCounts) : 1;
+  const estimatedByArabic = Math.ceil(ayahText.trim().length / 72);
+  const estimatedByTranslation = Math.ceil(translationText.trim().length / 112);
+  const estimatedByWords = Math.ceil(Math.max(ayahWords / 8, translationWords / 14));
+  const estimate = Math.max(1, estimatedByArabic, estimatedByTranslation, estimatedByWords);
+
+  return Math.max(1, Math.min(MAX_SCREEN_PARTS, maxNonEmptyParts, estimate));
+};
+
+const splitTextIntoBalancedParts = (text: string, partCount: number): string[] => {
+  const words = splitIntoWords(text);
+  if (partCount <= 1) {
+    return [text.trim()];
+  }
+
+  if (words.length === 0) {
+    return Array.from({ length: partCount }, () => '');
+  }
+
+  const finalPartCount = Math.min(partCount, words.length);
+  const cumulativeLengths = words.reduce<number[]>((lengths, word, index) => {
+    const previousLength = lengths[index - 1] ?? 0;
+    lengths.push(previousLength + word.length + (index === 0 ? 0 : 1));
+    return lengths;
+  }, []);
+  const totalLength = cumulativeLengths[cumulativeLengths.length - 1] ?? 0;
+  const parts: string[] = [];
+  let startIndex = 0;
+
+  for (let partIndex = 1; partIndex < finalPartCount; partIndex += 1) {
+    const remainingParts = finalPartCount - partIndex;
+    const minEnd = startIndex + 1;
+    const maxEnd = words.length - remainingParts;
+    const targetLength = (totalLength / finalPartCount) * partIndex;
+    let bestEnd = minEnd;
+    let bestScore = Number.POSITIVE_INFINITY;
+
+    for (let end = minEnd; end <= maxEnd; end += 1) {
+      const wordBeforeBreak = words[end - 1] ?? '';
+      const punctuationBonus = /[.,;:!?\u060C\u061B\u061F]$/.test(wordBeforeBreak) ? totalLength * 0.08 : 0;
+      const score = Math.abs((cumulativeLengths[end - 1] ?? 0) - targetLength) - punctuationBonus;
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestEnd = end;
+      }
+    }
+
+    parts.push(words.slice(startIndex, bestEnd).join(' '));
+    startIndex = bestEnd;
+  }
+
+  parts.push(words.slice(startIndex).join(' '));
+
+  while (parts.length < partCount) {
+    parts.push('');
+  }
+
+  return parts;
+};
+
+const createBalancedScreenParts = (ayahText: string, translationText: string): ScreenPart[] => {
+  const partCount = estimateScreenPartCount(ayahText, translationText);
+  const ayahParts = splitTextIntoBalancedParts(ayahText, partCount);
+  const translationParts = splitTextIntoBalancedParts(translationText, partCount);
+
+  return Array.from({ length: partCount }, (_, index) => ({
+    ayah: ayahParts[index] ?? '',
+    translation: translationParts[index] ?? '',
+  }));
+};
+
 const resolveExportScale = (width: number, height: number, isCoarsePointerDevice: boolean): number => {
   const safeWidth = Math.max(width, 1);
   const safeHeight = Math.max(height, 1);
@@ -349,7 +458,7 @@ const App: React.FC = () => {
         if (parsed.ayah && parsed.translation) {
           return {
             past: [],
-            present: { ...defaultState, ...parsed },
+            present: normalizeAppState(defaultState, parsed),
             future: [],
             pendingHistoryBase: null,
           };
@@ -371,10 +480,13 @@ const App: React.FC = () => {
   const [isHighlighting, setIsHighlighting] = useState(false);
   const [isApplyingKashida, setIsApplyingKashida] = useState(false);
   const [isExportingImage, setIsExportingImage] = useState(false);
+  const [isExportingScreens, setIsExportingScreens] = useState(false);
+  const [screenExportTarget, setScreenExportTarget] = useState<{ part: ScreenPart; index: number } | null>(null);
   const [draggingElement, setDraggingElement] = useState<string | null>(null);
   const [activeElementId, setActiveElementId] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
+  const screenExportRef = useRef<HTMLDivElement>(null);
   const loadedFontFacesRef = useRef<Map<string, FontFace>>(new Map());
   const canUndo = historyState.past.length > 0;
   const canRedo = historyState.future.length > 0;
@@ -496,6 +608,29 @@ const App: React.FC = () => {
   const setBgColor = useCallback((color: string) => updateAppState((s) => (s.bgColor === color ? s : { ...s, bgColor: color })), [updateAppState]);
   const setBackgroundMode = useCallback((mode: BackgroundMode) => updateAppState((s) => (s.backgroundMode === mode ? s : { ...s, backgroundMode: mode })), [updateAppState]);
   const setHighlightedWords = useCallback((words: string[]) => updateAppState((s) => (JSON.stringify(s.highlightedWords) === JSON.stringify(words) ? s : { ...s, highlightedWords: words })), [updateAppState]);
+  const setAyahNumber = useCallback((ayahNumber: string) => updateAppState((s) => (s.ayahNumber === ayahNumber ? s : { ...s, ayahNumber })), [updateAppState]);
+
+  const handleGenerateScreenParts = useCallback(() => {
+    const nextScreenParts = createBalancedScreenParts(appState.ayah.text, appState.translation.text);
+    updateAppState((s) => ({ ...s, screenParts: nextScreenParts }));
+  }, [appState.ayah.text, appState.translation.text, updateAppState]);
+
+  const handleScreenPartChange = useCallback((index: number, field: keyof ScreenPart, value: string) => {
+    updateAppState((s) => {
+      if (!s.screenParts[index]) {
+        return s;
+      }
+
+      const nextScreenParts = s.screenParts.map((part, partIndex) => (
+        partIndex === index ? { ...part, [field]: value } : part
+      ));
+
+      return {
+        ...s,
+        screenParts: nextScreenParts,
+      };
+    });
+  }, [updateAppState]);
 
   const handleFontUpload = useCallback((file: File) => {
     const reader = new FileReader();
@@ -682,7 +817,7 @@ const App: React.FC = () => {
     dispatchHistory({ type: 'REDO' });
   }, []);
 
-  const triggerCanvasDownload = useCallback((canvas: HTMLCanvasElement, fileName: string) => {
+  const triggerCanvasDownload = useCallback((canvas: HTMLCanvasElement, fileName: string): Promise<void> => new Promise((resolve) => {
     const link = document.createElement('a');
     link.download = fileName;
     link.rel = 'noopener';
@@ -695,7 +830,10 @@ const App: React.FC = () => {
 
     const clickAndCleanup = () => {
       link.click();
-      window.setTimeout(() => link.remove(), 0);
+      window.setTimeout(() => {
+        link.remove();
+        resolve();
+      }, 0);
     };
 
     if (canvas.toBlob && !shouldPreferDataUrl) {
@@ -717,7 +855,7 @@ const App: React.FC = () => {
 
     link.href = fallbackHref();
     clickAndCleanup();
-  }, []);
+  }), []);
 
   const handleDownloadImage = useCallback(() => {
     const canvasElement = canvasRef.current;
@@ -758,7 +896,7 @@ const App: React.FC = () => {
           removeContainer: true,
         });
 
-        triggerCanvasDownload(canvas, 'ayah.png');
+        await triggerCanvasDownload(canvas, 'ayah.png');
       } catch (err) {
         console.error('Failed to export image:', err);
       } finally {
@@ -770,6 +908,57 @@ const App: React.FC = () => {
 
     void exportImage();
   }, [appState.backgroundMode, appState.bgColor, isExportingImage, triggerCanvasDownload]);
+
+  const handleExportScreens = useCallback(() => {
+    if (isExportingScreens || appState.screenParts.length === 0) return;
+
+    setIsExportingScreens(true);
+
+    const exportScreens = async () => {
+      try {
+        if (document.fonts?.ready) {
+          await document.fonts.ready;
+        }
+
+        for (let index = 0; index < appState.screenParts.length; index += 1) {
+          const part = appState.screenParts[index];
+          if (!part) continue;
+
+          setScreenExportTarget({ part, index });
+          await waitForAnimationFrames(2);
+
+          const exportElement = screenExportRef.current;
+          if (!exportElement) continue;
+
+          await waitForImagesReady(exportElement);
+          await waitForAnimationFrames(1);
+
+          // @ts-ignore
+          const canvas = await html2canvas(exportElement, {
+            backgroundColor: appState.backgroundMode === BackgroundMode.TRANSPARENT ? null : appState.backgroundMode === BackgroundMode.GRADIENT ? '#667eea' : appState.bgColor,
+            scale: 1,
+            useCORS: true,
+            width: SCREEN_EXPORT_WIDTH,
+            height: SCREEN_EXPORT_HEIGHT,
+            windowWidth: SCREEN_EXPORT_WIDTH,
+            windowHeight: SCREEN_EXPORT_HEIGHT,
+            logging: false,
+            removeContainer: true,
+          });
+
+          await triggerCanvasDownload(canvas, `ayah-screen-${String(index + 1).padStart(2, '0')}.png`);
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 160));
+        }
+      } catch (err) {
+        console.error('Failed to export screens:', err);
+      } finally {
+        setScreenExportTarget(null);
+        setIsExportingScreens(false);
+      }
+    };
+
+    void exportScreens();
+  }, [appState.backgroundMode, appState.bgColor, appState.screenParts, isExportingScreens, triggerCanvasDownload]);
 
   const customFontOptions = useMemo(() => appState.customFonts.map((f) => ({ value: f.familyName, label: f.name })), [appState.customFonts]);
   const combinedArabicFonts = useMemo(() => [...ARABIC_FONTS, { value: 'separator', label: '--- Custom Fonts ---', disabled: true }, ...customFontOptions], [customFontOptions]);
@@ -796,6 +985,33 @@ const App: React.FC = () => {
         setActiveElementId={setActiveElementId}
         onSelectSticker={handleSelectSticker}
       />
+      {screenExportTarget && (
+        <div
+          ref={screenExportRef}
+          aria-hidden="true"
+          style={{
+            height: SCREEN_EXPORT_HEIGHT,
+            left: -12000,
+            overflow: 'hidden',
+            pointerEvents: 'none',
+            position: 'fixed',
+            top: 0,
+            width: SCREEN_EXPORT_WIDTH,
+          }}
+        >
+          <ScreenFrame
+            part={screenExportTarget.part}
+            partIndex={screenExportTarget.index}
+            totalParts={appState.screenParts.length}
+            ayahNumber={appState.ayahNumber}
+            ayah={appState.ayah}
+            translation={appState.translation}
+            textColor={appState.textColor}
+            bgColor={appState.bgColor}
+            backgroundMode={appState.backgroundMode}
+          />
+        </div>
+      )}
       <ControlsPanel
         ayah={appState.ayah}
         setAyah={setAyah}
@@ -830,6 +1046,13 @@ const App: React.FC = () => {
         isDownloading={isExportingImage}
         onUndo={handleUndo}
         onRedo={handleRedo}
+        ayahNumber={appState.ayahNumber}
+        setAyahNumber={setAyahNumber}
+        screenParts={appState.screenParts}
+        onGenerateScreenParts={handleGenerateScreenParts}
+        onScreenPartChange={handleScreenPartChange}
+        onExportScreens={handleExportScreens}
+        isExportingScreens={isExportingScreens}
       />
       <style>{`
         @font-face {

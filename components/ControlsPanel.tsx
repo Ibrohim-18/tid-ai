@@ -1,9 +1,10 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Eraser, Image, Languages, Palette, Redo2, Sparkles, Type, Undo2 } from 'lucide-react';
-import type { TextElement, CustomFont } from '../types';
+import { Download, Eraser, Image, Languages, Layers, Palette, Redo2, Scissors, Sparkles, Type, Undo2 } from 'lucide-react';
+import type { TextElement, CustomFont, ScreenPart } from '../types';
 import { Language, BackgroundMode } from '../types';
 import { InputWithTags } from './ui/input-with-tags';
 import { RainbowButton } from './ui/rainbow-button';
+import ScreenFrame from './ScreenFrame';
 
 type TextElementSetter = (updater: React.SetStateAction<TextElement>, options?: { recordHistory?: boolean }) => void;
 
@@ -47,6 +48,13 @@ interface ControlsPanelProps {
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  ayahNumber: string;
+  setAyahNumber: (value: string) => void;
+  screenParts: ScreenPart[];
+  onGenerateScreenParts: () => void;
+  onScreenPartChange: (index: number, field: keyof ScreenPart, value: string) => void;
+  onExportScreens: () => void;
+  isExportingScreens: boolean;
 }
 
 const inputClass = 'w-full rounded-[24px] border border-white/10 bg-[#111111c9] px-5 py-4 text-white shadow-[0_0_24px_rgba(0,0,0,0.18)] outline-none transition duration-200 placeholder:text-white/35 focus:border-white/20 focus:ring-4 focus:ring-white/10';
@@ -81,6 +89,23 @@ const TextWorkspacePanel: React.FC<{ children: React.ReactNode; onClose: () => v
     </div>
     <div className="max-h-[calc(72svh-86px)] overflow-y-auto p-4 md:max-h-[calc(100svh-198px)] md:p-5">
       <div className="space-y-4">{children}</div>
+    </div>
+  </div>
+);
+
+const ScreensWorkspacePanel: React.FC<{ children: React.ReactNode; onClose: () => void }> = ({ children, onClose }) => (
+  <div className="fixed inset-x-3 bottom-3 z-50 max-h-[78svh] overflow-hidden rounded-[30px] border border-white/12 bg-[#09090be8] text-white shadow-[0_30px_90px_rgba(0,0,0,0.35)] backdrop-blur-2xl md:inset-x-auto md:bottom-4 md:right-4 md:top-24 md:w-[560px] md:max-h-[calc(100svh-112px)]" onClick={(e) => e.stopPropagation()}>
+    <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+      <div>
+        <h3 className="text-lg font-semibold tracking-tight text-white">Screens</h3>
+        <p className="mt-1 text-xs leading-5 text-white/55">Split one ayah into vertical export frames.</p>
+      </div>
+      <button onClick={onClose} className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white/10 text-white/70 shadow-sm transition hover:bg-white hover:text-slate-900" aria-label="Close panel">
+        &times;
+      </button>
+    </div>
+    <div className="max-h-[calc(78svh-86px)] overflow-y-auto p-4 md:max-h-[calc(100svh-198px)] md:p-5">
+      {children}
     </div>
   </div>
 );
@@ -202,6 +227,7 @@ const PremiumTextareaField: React.FC<PremiumTextareaFieldProps> = ({
 
 const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [activeScreenIndex, setActiveScreenIndex] = useState(0);
   const controlsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -227,6 +253,12 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       window.removeEventListener('keydown', closeOnEscape);
     };
   }, []);
+
+  useEffect(() => {
+    if (activeScreenIndex > Math.max(0, props.screenParts.length - 1)) {
+      setActiveScreenIndex(Math.max(0, props.screenParts.length - 1));
+    }
+  }, [activeScreenIndex, props.screenParts.length]);
 
   const toggleMenu = (menu: string) => {
     setActiveMenu((prev) => (prev === menu ? null : menu));
@@ -260,12 +292,16 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
     props.setTranslation((t) => ({ ...t, text, position: { ...t.position, x: -1 } }));
   };
 
+  const activeScreenPart = props.screenParts[activeScreenIndex] ?? { ayah: '', translation: '' };
+  const cleanAyahNumber = (value: string) => value.replace(/[^0-9\u0660-\u0669\u06F0-\u06F9]/g, '');
+
   return (
     <>
       <header className="fixed inset-x-0 top-4 z-30 flex justify-center px-4">
         <div ref={controlsRef} className="relative">
           <div className="flex flex-wrap items-center justify-center gap-2 rounded-[28px] border border-white/12 bg-[#09090bd6] p-2.5 shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:gap-2.5">
             <ToolbarButton onClick={(e) => { e.stopPropagation(); toggleMenu('text'); }} isActive={activeMenu === 'text'} icon={Sparkles} rainbow>Text & AI</ToolbarButton>
+            <ToolbarButton onClick={(e) => { e.stopPropagation(); toggleMenu('screens'); }} isActive={activeMenu === 'screens'} icon={Layers}>Screens</ToolbarButton>
             <div className="flex gap-1.5">
               <ToolbarIconButton onClick={props.onUndo} icon={Undo2} label="Undo" disabled={!props.canUndo} />
               <ToolbarIconButton onClick={props.onRedo} icon={Redo2} label="Redo" disabled={!props.canRedo} />
@@ -350,6 +386,120 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
                 </section>
               </div>
             </TextWorkspacePanel>
+          )}
+
+          {activeMenu === 'screens' && (
+            <ScreensWorkspacePanel onClose={() => setActiveMenu(null)}>
+              <div className="space-y-5">
+                <section className={`${textFieldShellClass} space-y-4`}>
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                    <div>
+                      <label htmlFor="ayahNumber" className="mb-1.5 block text-sm font-medium text-white/70">Ayah number</label>
+                      <input
+                        id="ayahNumber"
+                        value={props.ayahNumber}
+                        inputMode="numeric"
+                        placeholder="83"
+                        onChange={(e) => props.setAyahNumber(cleanAyahNumber(e.target.value))}
+                        className={inputClass}
+                      />
+                    </div>
+                    <FieldActionButton onClick={props.onGenerateScreenParts} icon={Scissors} label="Auto split" disabled={!props.ayah.text.trim() && !props.translation.text.trim()} />
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-white/50">
+                      {props.screenParts.length}/5 screens
+                    </span>
+                    <RainbowButton onClick={props.onExportScreens} disabled={props.isExportingScreens || props.screenParts.length === 0} className="h-10 px-4 text-sm font-semibold">
+                      <Download className="h-4 w-4" />
+                      {props.isExportingScreens ? 'Exporting screens...' : 'Export screens'}
+                    </RainbowButton>
+                  </div>
+                </section>
+
+                <section className="grid gap-4 md:grid-cols-[minmax(0,1fr)_174px]">
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      {props.screenParts.length > 0 ? props.screenParts.map((_, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => setActiveScreenIndex(index)}
+                          className={`rounded-2xl border px-3 py-2 text-xs font-semibold transition ${activeScreenIndex === index ? 'border-white/20 bg-white text-slate-900 shadow' : 'border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white'}`}
+                        >
+                          Screen {index + 1}
+                        </button>
+                      )) : (
+                        <div className="rounded-[24px] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/55">
+                          Use Auto split to create export screens from the current text.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      {props.screenParts.map((part, index) => (
+                        <div key={index} className={`rounded-[24px] border p-3 transition ${activeScreenIndex === index ? 'border-white/18 bg-white/[0.07]' : 'border-white/10 bg-white/[0.035]'}`}>
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setActiveScreenIndex(index)}
+                              className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/55 transition hover:bg-white/10 hover:text-white"
+                            >
+                              Screen {index + 1}
+                            </button>
+                            {index === props.screenParts.length - 1 && props.ayahNumber.trim() && (
+                              <span className="text-xs text-white/45">Badge on this screen</span>
+                            )}
+                          </div>
+                          <div className="space-y-2.5">
+                            <textarea
+                              dir="rtl"
+                              value={part.ayah}
+                              onFocus={() => setActiveScreenIndex(index)}
+                              onChange={(e) => props.onScreenPartChange(index, 'ayah', e.target.value)}
+                              className={`${textFieldTextareaClass} min-h-[92px] lg:min-h-[104px]`}
+                              style={{ fontFamily: props.ayah.font }}
+                              placeholder="Arabic fragment..."
+                            />
+                            <textarea
+                              value={part.translation}
+                              onFocus={() => setActiveScreenIndex(index)}
+                              onChange={(e) => props.onScreenPartChange(index, 'translation', e.target.value)}
+                              className={`${textFieldTextareaClass} min-h-[78px] lg:min-h-[88px]`}
+                              style={{ fontFamily: props.translation.font }}
+                              placeholder="Translation fragment..."
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="md:sticky md:top-0">
+                    <div className="overflow-hidden rounded-[26px] border border-white/12 bg-black/20 shadow-[0_16px_44px_rgba(0,0,0,0.24)]">
+                      <ScreenFrame
+                        part={activeScreenPart}
+                        partIndex={activeScreenIndex}
+                        totalParts={Math.max(1, props.screenParts.length)}
+                        ayahNumber={props.ayahNumber}
+                        ayah={props.ayah}
+                        translation={props.translation}
+                        textColor={props.textColor}
+                        bgColor={props.bgColor}
+                        backgroundMode={props.backgroundMode}
+                        className="aspect-[9/16]"
+                        fontScale={0.24}
+                        showTransparentPreviewGrid
+                      />
+                    </div>
+                    <div className="mt-3 text-center text-xs text-white/45">
+                      {props.screenParts.length > 0 ? `Preview ${activeScreenIndex + 1} of ${props.screenParts.length}` : 'Preview'}
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </ScreensWorkspacePanel>
           )}
 
           {activeMenu === 'fonts' && (
@@ -469,12 +619,20 @@ const areControlsPanelPropsEqual = (prev: ControlsPanelProps, next: ControlsPane
   && prev.translationFonts === next.translationFonts
   && prev.highlightedWords === next.highlightedWords
   && prev.userStickers === next.userStickers
+  && prev.ayahNumber === next.ayahNumber
+  && prev.screenParts === next.screenParts
   && prev.isHighlighting === next.isHighlighting
   && prev.isApplyingKashida === next.isApplyingKashida
+  && prev.isDownloading === next.isDownloading
+  && prev.isExportingScreens === next.isExportingScreens
   && prev.canUndo === next.canUndo
   && prev.canRedo === next.canRedo
   && prev.onUndo === next.onUndo
   && prev.onRedo === next.onRedo
+  && prev.setAyahNumber === next.setAyahNumber
+  && prev.onGenerateScreenParts === next.onGenerateScreenParts
+  && prev.onScreenPartChange === next.onScreenPartChange
+  && prev.onExportScreens === next.onExportScreens
 );
 
 export default React.memo(ControlsPanel, areControlsPanelPropsEqual);
