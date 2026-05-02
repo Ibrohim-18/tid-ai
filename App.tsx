@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo, useReducer } from 'react';
-import type { TextElement, CustomFont, StickerElement, ScreenPart } from './types';
+import type { TextElement, CustomFont, StickerElement, ScreenPart, QuranVerseSelection } from './types';
 import { Language, BackgroundMode } from './types';
 import ControlsPanel from './components/ControlsPanel';
 import CanvasArea from './components/CanvasArea';
@@ -46,6 +46,8 @@ const SCREEN_EXPORT_HEIGHT = 1920;
 
 const ARABIC_DIACRITICS_REGEX = /[\u064B-\u065F\u0670\u06D6-\u06ED]/;
 const ARABIC_BASE_LETTER_REGEX = /[\u0621-\u064A]/;
+const ARABIC_MEANING_BREAK_CHARS = new Set(['ۖ', 'ۗ', 'ۘ', 'ۙ', 'ۚ', 'ۛ', 'ۜ', '۝', '،', '؛', '؟']);
+const TRANSLATION_MEANING_BREAK_CHARS = new Set(['.', ';', '?', '!', ':']);
 const STRETCHABLE_ARABIC_LETTERS = new Set(['ب', 'ت', 'ث', 'ج', 'ح', 'خ', 'س', 'ش', 'ص', 'ض', 'ط', 'ظ', 'ع', 'غ', 'ف', 'ق', 'ك', 'ل', 'م', 'ن', 'ه', 'ي']);
 const NON_CONNECTING_ARABIC_LETTERS = new Set(['ا', 'أ', 'إ', 'آ', 'د', 'ذ', 'ر', 'ز', 'و', 'ؤ', 'ء']);
 
@@ -354,6 +356,105 @@ const splitIntoWords = (text: string): string[] => text.trim().split(/\s+/).filt
 
 const countWords = (text: string): number => splitIntoWords(text).length;
 
+const splitByMeaningBreaks = (text: string, breakChars: Set<string>): string[] => {
+  const normalized = text.trim().replace(/\s+/g, ' ');
+  if (!normalized) return [];
+
+  const chunks: string[] = [];
+  let current = '';
+
+  for (const char of Array.from(normalized)) {
+    current += char;
+
+    if (breakChars.has(char)) {
+      const chunk = current.trim();
+      if (chunk) {
+        chunks.push(chunk);
+      }
+      current = '';
+    }
+  }
+
+  const tail = current.trim();
+  if (tail) {
+    chunks.push(tail);
+  }
+
+  return chunks;
+};
+
+const mergeChunksToPartCount = (chunks: string[], partCount: number): string[] => {
+  const cleanChunks = chunks.map((chunk) => chunk.trim()).filter(Boolean);
+  if (partCount <= 1 || cleanChunks.length <= 1) {
+    return [cleanChunks.join(' ').trim()];
+  }
+
+  const finalPartCount = Math.min(partCount, cleanChunks.length);
+  const totalLength = cleanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const targetLength = totalLength / finalPartCount;
+  const parts: string[] = [];
+  let cursor = 0;
+
+  for (let partIndex = 0; partIndex < finalPartCount - 1; partIndex += 1) {
+    const remainingParts = finalPartCount - partIndex - 1;
+    const maxCursor = cleanChunks.length - remainingParts;
+    let current = '';
+
+    while (cursor < maxCursor) {
+      const next = cleanChunks[cursor];
+      const candidate = current ? `${current} ${next}` : next;
+      const shouldStop = current.length > 0 && Math.abs(current.length - targetLength) <= Math.abs(candidate.length - targetLength);
+
+      if (shouldStop) {
+        break;
+      }
+
+      current = candidate;
+      cursor += 1;
+    }
+
+    parts.push(current.trim());
+  }
+
+  parts.push(cleanChunks.slice(cursor).join(' ').trim());
+
+  return parts;
+};
+
+const splitLongChunksByWords = (chunks: string[], targetChars: number): string[] => (
+  chunks.flatMap((chunk) => {
+    if (chunk.length <= targetChars) {
+      return [chunk];
+    }
+
+    const extraPartCount = Math.min(MAX_SCREEN_PARTS, Math.ceil(chunk.length / targetChars));
+    return splitTextIntoBalancedParts(chunk, extraPartCount).filter((part) => part.trim());
+  })
+);
+
+const splitTextIntoMeaningAwareParts = (
+  text: string,
+  partCount: number,
+  breakChars: Set<string>,
+  longChunkTargetChars: number
+): string[] => {
+  if (partCount <= 1) {
+    return [text.trim()];
+  }
+
+  const meaningChunks = splitLongChunksByWords(splitByMeaningBreaks(text, breakChars), longChunkTargetChars);
+
+  if (meaningChunks.length >= partCount) {
+    return mergeChunksToPartCount(meaningChunks, partCount);
+  }
+
+  if (meaningChunks.length > 1) {
+    return meaningChunks;
+  }
+
+  return splitTextIntoBalancedParts(text, partCount);
+};
+
 const estimateScreenPartCount = (ayahText: string, translationText: string): number => {
   const ayahWords = countWords(ayahText);
   const translationWords = countWords(translationText);
@@ -421,10 +522,14 @@ const splitTextIntoBalancedParts = (text: string, partCount: number): string[] =
 
 const createBalancedScreenParts = (ayahText: string, translationText: string): ScreenPart[] => {
   const partCount = estimateScreenPartCount(ayahText, translationText);
-  const ayahParts = splitTextIntoBalancedParts(ayahText, partCount);
-  const translationParts = splitTextIntoBalancedParts(translationText, partCount);
+  const ayahParts = splitTextIntoMeaningAwareParts(ayahText, partCount, ARABIC_MEANING_BREAK_CHARS, 82);
+  const finalPartCount = Math.max(1, ayahParts.length);
+  const meaningAwareTranslationParts = splitTextIntoMeaningAwareParts(translationText, finalPartCount, TRANSLATION_MEANING_BREAK_CHARS, 128);
+  const translationParts = meaningAwareTranslationParts.length === finalPartCount
+    ? meaningAwareTranslationParts
+    : splitTextIntoBalancedParts(translationText, finalPartCount);
 
-  return Array.from({ length: partCount }, (_, index) => ({
+  return Array.from({ length: finalPartCount }, (_, index) => ({
     ayah: ayahParts[index] ?? '',
     translation: translationParts[index] ?? '',
   }));
@@ -630,6 +735,28 @@ const App: React.FC = () => {
         screenParts: nextScreenParts,
       };
     });
+  }, [updateAppState]);
+
+  const handleApplyQuranVerse = useCallback((selection: QuranVerseSelection) => {
+    const nextScreenParts = createBalancedScreenParts(selection.ayah, selection.translation);
+
+    updateAppState((s) => ({
+      ...s,
+      ayah: {
+        ...s.ayah,
+        text: selection.ayah,
+        position: { ...s.ayah.position, x: -1 },
+      },
+      translation: {
+        ...s.translation,
+        text: selection.translation,
+        position: { ...s.translation.position, x: -1 },
+      },
+      ayahNumber: selection.ayahNumber,
+      highlightedWords: [],
+      screenParts: nextScreenParts,
+    }));
+    setActiveElementId(null);
   }, [updateAppState]);
 
   const handleFontUpload = useCallback((file: File) => {
@@ -1051,6 +1178,7 @@ const App: React.FC = () => {
         screenParts={appState.screenParts}
         onGenerateScreenParts={handleGenerateScreenParts}
         onScreenPartChange={handleScreenPartChange}
+        onApplyQuranVerse={handleApplyQuranVerse}
         onExportScreens={handleExportScreens}
         isExportingScreens={isExportingScreens}
       />

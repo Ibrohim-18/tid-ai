@@ -1,10 +1,12 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Eraser, Image, Languages, Layers, Palette, Redo2, Scissors, Sparkles, Type, Undo2 } from 'lucide-react';
-import type { TextElement, CustomFont, ScreenPart } from '../types';
+import { BookOpen, Download, Eraser, Image, Languages, Layers, Palette, Redo2, Scissors, Sparkles, Type, Undo2 } from 'lucide-react';
+import type { TextElement, CustomFont, ScreenPart, QuranVerseSelection } from '../types';
 import { Language, BackgroundMode } from '../types';
 import { InputWithTags } from './ui/input-with-tags';
 import { RainbowButton } from './ui/rainbow-button';
 import ScreenFrame from './ScreenFrame';
+import { loadQuranLibrary } from '../lib/quranLibrary';
+import type { QuranChapter } from '../lib/quranLibrary';
 
 type TextElementSetter = (updater: React.SetStateAction<TextElement>, options?: { recordHistory?: boolean }) => void;
 
@@ -53,6 +55,7 @@ interface ControlsPanelProps {
   screenParts: ScreenPart[];
   onGenerateScreenParts: () => void;
   onScreenPartChange: (index: number, field: keyof ScreenPart, value: string) => void;
+  onApplyQuranVerse: (selection: QuranVerseSelection) => void;
   onExportScreens: () => void;
   isExportingScreens: boolean;
 }
@@ -228,6 +231,10 @@ const PremiumTextareaField: React.FC<PremiumTextareaFieldProps> = ({
 const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [activeScreenIndex, setActiveScreenIndex] = useState(0);
+  const [quranChapters, setQuranChapters] = useState<QuranChapter[]>([]);
+  const [quranLoadState, setQuranLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [selectedChapterId, setSelectedChapterId] = useState(1);
+  const [selectedVerseId, setSelectedVerseId] = useState(1);
   const controlsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -259,6 +266,30 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
       setActiveScreenIndex(Math.max(0, props.screenParts.length - 1));
     }
   }, [activeScreenIndex, props.screenParts.length]);
+
+  useEffect(() => {
+    if (activeMenu !== 'screens') return;
+
+    let isCancelled = false;
+    setQuranLoadState('loading');
+
+    loadQuranLibrary(props.language)
+      .then((chapters) => {
+        if (isCancelled) return;
+        setQuranChapters(chapters);
+        setQuranLoadState('ready');
+      })
+      .catch((error) => {
+        console.error('Failed to load Quran library', error);
+        if (isCancelled) return;
+        setQuranChapters([]);
+        setQuranLoadState('error');
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeMenu, props.language]);
 
   const toggleMenu = (menu: string) => {
     setActiveMenu((prev) => (prev === menu ? null : menu));
@@ -294,6 +325,25 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
 
   const activeScreenPart = props.screenParts[activeScreenIndex] ?? { ayah: '', translation: '' };
   const cleanAyahNumber = (value: string) => value.replace(/[^0-9\u0660-\u0669\u06F0-\u06F9]/g, '');
+  const selectedChapter = quranChapters.find((chapter) => chapter.id === selectedChapterId) ?? quranChapters[0];
+  const selectedVerse = selectedChapter?.verses.find((verse) => verse.id === selectedVerseId) ?? selectedChapter?.verses[0];
+  const selectedChapterVerseCount = selectedChapter?.total_verses ?? 1;
+
+  const handleChapterSelect = (chapterId: number) => {
+    setSelectedChapterId(chapterId);
+    setSelectedVerseId(1);
+  };
+
+  const handleApplySelectedVerse = () => {
+    if (!selectedVerse) return;
+
+    props.onApplyQuranVerse({
+      ayah: selectedVerse.text,
+      translation: selectedVerse.translation,
+      ayahNumber: String(selectedVerse.id),
+    });
+    setActiveScreenIndex(0);
+  };
 
   return (
     <>
@@ -391,6 +441,73 @@ const ControlsPanel: React.FC<ControlsPanelProps> = (props) => {
           {activeMenu === 'screens' && (
             <ScreensWorkspacePanel onClose={() => setActiveMenu(null)}>
               <div className="space-y-5">
+                <section className={`${textFieldShellClass} space-y-4`}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 inline-flex rounded-full border border-white/10 bg-white/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/55">
+                        Quran library
+                      </div>
+                      <p className="text-sm leading-5 text-white/60">Choose a surah and ayah, then load it into the editor and screens.</p>
+                    </div>
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-white/45">
+                      {props.language === Language.RU ? 'RU' : 'EN'}
+                    </span>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1.35fr)_minmax(112px,0.65fr)]">
+                    <div>
+                      <label htmlFor="quranSurah" className="mb-1.5 block text-sm font-medium text-white/70">Surah</label>
+                      <select
+                        id="quranSurah"
+                        value={selectedChapter?.id ?? selectedChapterId}
+                        onChange={(e) => handleChapterSelect(Number(e.target.value))}
+                        disabled={quranLoadState !== 'ready'}
+                        className={selectClass}
+                      >
+                        {quranChapters.map((chapter) => (
+                          <option key={chapter.id} value={chapter.id}>
+                            {chapter.id}. {chapter.transliteration} - {chapter.translation}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label htmlFor="quranAyah" className="mb-1.5 block text-sm font-medium text-white/70">Ayah</label>
+                      <select
+                        id="quranAyah"
+                        value={selectedVerse?.id ?? selectedVerseId}
+                        onChange={(e) => setSelectedVerseId(Number(e.target.value))}
+                        disabled={quranLoadState !== 'ready'}
+                        className={selectClass}
+                      >
+                        {Array.from({ length: selectedChapterVerseCount }, (_, index) => index + 1).map((verseNumber) => (
+                          <option key={verseNumber} value={verseNumber}>{verseNumber}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[24px] border border-white/10 bg-[#0b0d12d9] p-3">
+                    {quranLoadState === 'loading' && <p className="text-sm text-white/50">Loading Quran library...</p>}
+                    {quranLoadState === 'error' && <p className="text-sm text-red-200/80">Quran library could not be loaded.</p>}
+                    {quranLoadState === 'ready' && selectedVerse && (
+                      <div className="space-y-2">
+                        <p dir="rtl" className="line-clamp-3 text-right text-base leading-8 text-white" style={{ fontFamily: props.ayah.font }}>
+                          {selectedVerse.text}
+                        </p>
+                        <p className="line-clamp-2 text-xs leading-5 text-white/55" style={{ fontFamily: props.translation.font }}>
+                          {selectedVerse.translation}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end">
+                    <FieldActionButton onClick={handleApplySelectedVerse} icon={BookOpen} label="Load ayah" disabled={quranLoadState !== 'ready' || !selectedVerse} />
+                  </div>
+                </section>
+
                 <section className={`${textFieldShellClass} space-y-4`}>
                   <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                     <div>
@@ -632,6 +749,7 @@ const areControlsPanelPropsEqual = (prev: ControlsPanelProps, next: ControlsPane
   && prev.setAyahNumber === next.setAyahNumber
   && prev.onGenerateScreenParts === next.onGenerateScreenParts
   && prev.onScreenPartChange === next.onScreenPartChange
+  && prev.onApplyQuranVerse === next.onApplyQuranVerse
   && prev.onExportScreens === next.onExportScreens
 );
 

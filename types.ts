@@ -21,6 +21,12 @@ export interface ScreenPart {
   translation: string;
 }
 
+export interface QuranVerseSelection {
+  ayah: string;
+  translation: string;
+  ayahNumber: string;
+}
+
 export enum Language {
   RU = 'ru',
   EN = 'en',
