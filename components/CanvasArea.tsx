@@ -424,7 +424,7 @@ const CanvasArea = forwardRef<HTMLDivElement, CanvasAreaProps>((props, ref) => {
     : withOpacity(textColor, 0.68);
 
   const ayahStyle: React.CSSProperties = {
-    fontFamily: ayah.font,
+    fontFamily: ayah.font.includes(',') ? ayah.font : `'${ayah.font}', serif`,
     fontSize: `${ayah.size}px`,
     color: ayahTextColor,
     direction: 'rtl',
@@ -433,7 +433,7 @@ const CanvasArea = forwardRef<HTMLDivElement, CanvasAreaProps>((props, ref) => {
   };
 
   const translationStyle: React.CSSProperties = {
-    fontFamily: translation.font,
+    fontFamily: translation.font.includes(',') ? translation.font : `'${translation.font}', sans-serif`,
     fontSize: `${translation.size}px`,
     color: translationTextColor,
     textAlign: 'center',

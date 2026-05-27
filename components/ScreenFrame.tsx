@@ -105,7 +105,7 @@ const ScreenFrame: React.FC<ScreenFrameProps> = ({
           className="max-w-full whitespace-pre-wrap break-words"
           style={{
             color: ayahTextColor,
-            fontFamily: ayah.font,
+            fontFamily: ayah.font.includes(',') ? ayah.font : `'${ayah.font}', serif`,
             fontSize: ayahFontSize,
             lineHeight: 2.15,
             textShadow: transparentTextShadow,
@@ -118,7 +118,7 @@ const ScreenFrame: React.FC<ScreenFrameProps> = ({
               style={{
                 borderColor: ayahTextColor,
                 color: ayahTextColor,
-                fontFamily: ayah.font,
+                fontFamily: ayah.font.includes(',') ? ayah.font : `'${ayah.font}', serif`,
                 fontSize: `${Math.max(6, ayahFontSize * 0.42)}px`,
                 height: `${Math.max(14, ayahFontSize * 1.45)}px`,
                 lineHeight: 1,
@@ -136,7 +136,7 @@ const ScreenFrame: React.FC<ScreenFrameProps> = ({
           className="mt-[2.2%] max-w-full whitespace-pre-wrap break-words"
           style={{
             color: translationTextColor,
-            fontFamily: translation.font,
+            fontFamily: translation.font.includes(',') ? translation.font : `'${translation.font}', sans-serif`,
             fontSize: translationFontSize,
             lineHeight: 1.55,
             textShadow: transparentTextShadow,
