@@ -652,26 +652,30 @@ const App: React.FC = () => {
       appState.customFonts.forEach((font) => {
         if (loadedFontFacesRef.current.has(font.familyName)) return;
 
-        const format = getFontFormat(font.name, font.url, font.format);
-        const source = format
-          ? `url(${JSON.stringify(font.url)}) format('${format}')`
-          : `url(${JSON.stringify(font.url)})`;
+        try {
+          // JS FontFace constructor accepts standard CSS url() syntax for URLs,
+          // but passing the format(...) hint inside the string causes a SyntaxError in many browsers.
+          // We provide only the url(...) portion for construction.
+          const source = `url(${JSON.stringify(font.url)})`;
 
-        const fontFace = new FontFace(font.familyName, source, {
-          style: 'normal',
-          weight: '400',
-          display: 'swap',
-        });
-
-        fontFace
-          .load()
-          .then((loadedFace) => {
-            document.fonts.add(loadedFace);
-            loadedFontFacesRef.current.set(font.familyName, loadedFace);
-          })
-          .catch((error) => {
-            console.warn(`Failed to load custom font "${font.name}"`, error);
+          const fontFace = new FontFace(font.familyName, source, {
+            style: 'normal',
+            weight: '400',
+            display: 'swap',
           });
+
+          fontFace
+            .load()
+            .then((loadedFace) => {
+              document.fonts.add(loadedFace);
+              loadedFontFacesRef.current.set(font.familyName, loadedFace);
+            })
+            .catch((error) => {
+              console.warn(`Failed to load custom font "${font.name}"`, error);
+            });
+        } catch (error) {
+          console.error(`Failed to construct FontFace for "${font.name}":`, error);
+        }
       });
     }
   }, [appState.customFonts]);
